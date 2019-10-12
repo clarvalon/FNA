@@ -417,8 +417,9 @@ namespace Microsoft.Xna.Framework
 			 * to perform an update we sleep off the the remaining time to save battery
 			 * life and/or release CPU time to other threads and processes.
 			 */
-			if (IsFixedTimeStep && accumulatedElapsedTime < TargetElapsedTime)
-			{
+			//if (IsFixedTimeStep && accumulatedElapsedTime < TargetElapsedTime)
+            if (accumulatedElapsedTime < TargetElapsedTime) // XAGE HACK
+            {
 				int sleepTime = (
 					(int) (TargetElapsedTime - accumulatedElapsedTime).TotalMilliseconds
 				);

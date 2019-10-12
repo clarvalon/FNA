@@ -56,7 +56,7 @@ namespace Microsoft.Xna.Framework.Storage
 
 		#region Internal Variables
 
-		private readonly string storagePath;
+		public readonly string storagePath; // XAGE HACK
 
 		#endregion
 
