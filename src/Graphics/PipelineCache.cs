@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -24,56 +24,57 @@ using System.Runtime.InteropServices;
 
 namespace Microsoft.Xna.Framework.Graphics
 {
-	internal class PipelineCache
+	#region Internal PSO Hash Struct
+
+	[StructLayout(LayoutKind.Sequential)]
+	internal struct StateHash : IEquatable<StateHash>
 	{
-		#region Private PSO Hash Struct
+		readonly ulong a;
+		readonly ulong b;
 
-		[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 128)]
-		private struct StateHash : IEquatable<StateHash>
+		public StateHash(ulong a, ulong b)
 		{
-			readonly int i1;
-			readonly int i2;
-			readonly int i3;
-			readonly int i4;
-
-			public StateHash(int i1, int i2, int i3, int i4)
-			{
-				this.i1 = i1;
-				this.i2 = i2;
-				this.i3 = i3;
-				this.i4 = i4;
-			}
-
-			public override string ToString()
-			{
-				return    Convert.ToString(i1, 2).PadLeft(32, '0')
-					+ Convert.ToString(i2, 2).PadLeft(32, '0')
-					+ Convert.ToString(i3, 2).PadLeft(32, '0')
-					+ Convert.ToString(i4, 2).PadLeft(32, '0');
-			}
-
-                        bool IEquatable<StateHash>.Equals(StateHash hash)
-                        {
-                                return i1 == hash.i1 && i2 == hash.i2 && i3 == hash.i3 && i4 == hash.i4;
-                        }
-
-                        override public bool Equals(object obj)
-                        {
-                                if (obj == null || obj.GetType() != GetType())
-                                        return false;
-
-                                StateHash hash = (StateHash) obj;
-                                return i1 == hash.i1 && i2 == hash.i2 && i3 == hash.i3 && i4 == hash.i4;
-                        }
-
-                        override public int GetHashCode()
-                        {
-                                return unchecked(i1 + i2 + i3 + i4);
-                        }
+			this.a = a;
+			this.b = b;
 		}
 
-		#endregion
+		public override string ToString()
+		{
+			return	Convert.ToString((long) a, 2).PadLeft(64, '0') + "|" +
+				Convert.ToString((long) b, 2).PadLeft(64, '0');
+		}
 
+		bool IEquatable<StateHash>.Equals(StateHash hash)
+		{
+			return a == hash.a && b == hash.b;
+		}
+
+		public override bool Equals(object obj)
+		{
+			if (obj == null || obj.GetType() != GetType())
+			{
+				return false;
+			}
+
+			StateHash hash = (StateHash) obj;
+			return a == hash.a && b == hash.b;
+		}
+
+		public override int GetHashCode()
+		{
+			unchecked
+			{
+				int i1 = (int) (a ^ (a >> 32));
+				int i2 = (int) (b ^ (b >> 32));
+				return i1 + i2;
+			}
+		}
+	}
+
+	#endregion
+
+	internal class PipelineCache
+	{
 		#region Private Variables
 
 		private GraphicsDevice device;
@@ -117,7 +118,61 @@ namespace Microsoft.Xna.Framework.Graphics
 		private Dictionary<StateHash, BlendState> blendCache =
 			new Dictionary<StateHash, BlendState>();
 
+		/* Private Hashing Functions */
+
+		private static StateHash GetBlendHash(
+			BlendFunction alphaBlendFunc,
+			Blend alphaDestBlend,
+			Blend alphaSrcBlend,
+			BlendFunction colorBlendFunc,
+			Blend colorDestBlend,
+			Blend colorSrcBlend,
+			ColorWriteChannels channels,
+			ColorWriteChannels channels1,
+			ColorWriteChannels channels2,
+			ColorWriteChannels channels3,
+			Color blendFactor,
+			int multisampleMask
+		) {
+			int funcs = ((int) alphaBlendFunc << 4) | ((int) colorBlendFunc);
+			int blendsAndColorWriteChannels =
+				  ((int) alphaDestBlend	<< 28)
+				| ((int) alphaSrcBlend	<< 24)
+				| ((int) colorDestBlend	<< 20)
+				| ((int) colorSrcBlend	<< 16)
+				| ((int) channels	<< 12)
+				| ((int) channels1	<< 8)
+				| ((int) channels2	<< 4)
+				| ((int) channels3);
+
+			unchecked
+			{
+				return new StateHash(
+					((ulong) funcs << 32) | ((ulong) blendsAndColorWriteChannels << 0),
+					((ulong) multisampleMask << 32) | ((ulong) blendFactor.PackedValue << 0)
+				);
+			}
+		}
+
 		/* Public Functions */
+
+		public static StateHash GetBlendHash(BlendState state)
+		{
+			return GetBlendHash(
+				state.AlphaBlendFunction,
+				state.AlphaDestinationBlend,
+				state.AlphaSourceBlend,
+				state.ColorBlendFunction,
+				state.ColorDestinationBlend,
+				state.ColorSourceBlend,
+				state.ColorWriteChannels,
+				state.ColorWriteChannels1,
+				state.ColorWriteChannels2,
+				state.ColorWriteChannels3,
+				state.BlendFactor,
+				state.MultiSampleMask
+			);
+		}
 
 		public void BeginApplyBlend()
 		{
@@ -143,24 +198,20 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		public void EndApplyBlend()
 		{
-			int funcs = ((int) AlphaBlendFunction << 4) | ((int) ColorBlendFunction);
-			int blendsAndColorWriteChannels =
-				  ((int) AlphaDestinationBlend	<< (32 - 4))
-				| ((int) AlphaSourceBlend	<< (32 - 8))
-				| ((int) ColorDestinationBlend	<< (32 - 12))
-				| ((int) ColorSourceBlend	<< (32 - 16))
-				| ((int) ColorWriteChannels	<< (32 - 20))
-				| ((int) ColorWriteChannels1	<< (32 - 24))
-				| ((int) ColorWriteChannels2	<< (32 - 28))
-				| ((int) ColorWriteChannels3);
-
-			StateHash hash = new StateHash(
-				funcs,
-				blendsAndColorWriteChannels,
-				(int) BlendFactor.PackedValue,
+			StateHash hash = GetBlendHash(
+				AlphaBlendFunction,
+				AlphaDestinationBlend,
+				AlphaSourceBlend,
+				ColorBlendFunction,
+				ColorDestinationBlend,
+				ColorSourceBlend,
+				ColorWriteChannels,
+				ColorWriteChannels1,
+				ColorWriteChannels2,
+				ColorWriteChannels3,
+				BlendFactor,
 				MultiSampleMask
 			);
-
 			BlendState newBlend;
 			if (!blendCache.TryGetValue(hash, out newBlend))
 			{
@@ -181,15 +232,21 @@ namespace Microsoft.Xna.Framework.Graphics
 
 				blendCache.Add(hash, newBlend);
 #if VERBOSE_PIPELINECACHE
-				FNALoggerEXT.LogInfo("New BlendState added to pipeline cache with hash:\n"
-							+ hash.ToString());
-				FNALoggerEXT.LogInfo("Updated size of BlendState cache: "
-							+ blendCache.Count);
+				FNALoggerEXT.LogInfo(
+					"New BlendState added to pipeline cache with hash:\n" +
+					hash.ToString()
+				);
+				FNALoggerEXT.LogInfo(
+					"Updated size of BlendState cache: " +
+					blendCache.Count
+				);
 			}
 			else
 			{
-				FNALoggerEXT.LogInfo("Retrieved BlendState from pipeline cache with hash:\n"
-							+ hash.ToString());
+				FNALoggerEXT.LogInfo(
+					"Retrieved BlendState from pipeline cache with hash:\n" +
+					hash.ToString()
+				);
 #endif
 			}
 
@@ -224,7 +281,79 @@ namespace Microsoft.Xna.Framework.Graphics
 		private Dictionary<StateHash, DepthStencilState> depthStencilCache =
 			new Dictionary<StateHash, DepthStencilState>();
 
+		/* Private Hashing Functions */
+
+		private static StateHash GetDepthStencilHash(
+			bool depthBufferEnable,
+			bool depthWriteEnable,
+			CompareFunction depthFunc,
+			bool stencilEnable,
+			CompareFunction stencilFunc,
+			StencilOperation stencilPass,
+			StencilOperation stencilFail,
+			StencilOperation stencilDepthFail,
+			bool twoSidedStencil,
+			CompareFunction ccwStencilFunc,
+			StencilOperation ccwStencilPass,
+			StencilOperation ccwStencilFail,
+			StencilOperation ccwStencilDepthFail,
+			int stencilMask,
+			int stencilWriteMask,
+			int referenceStencil
+		) {
+			// Bool -> Int32 conversion
+			int zEnable = depthBufferEnable ? 1 : 0;
+			int zWriteEnable = depthWriteEnable ? 1 : 0;
+			int sEnable = stencilEnable ? 1 : 0;
+			int twoSided = twoSidedStencil ? 1 : 0;
+
+			int packedProperties =
+				  ((int) zEnable		<< 30)
+				| ((int) zWriteEnable		<< 29)
+				| ((int) sEnable		<< 28)
+				| ((int) twoSided		<< 27)
+				| ((int) depthFunc		<< 24)
+				| ((int) stencilFunc		<< 21)
+				| ((int) ccwStencilFunc		<< 18)
+				| ((int) stencilPass		<< 15)
+				| ((int) stencilFail		<< 12)
+				| ((int) stencilDepthFail	<< 9)
+				| ((int) ccwStencilFail		<< 6)
+				| ((int) ccwStencilPass		<< 3)
+				| ((int) ccwStencilDepthFail);
+
+			unchecked
+			{
+				return new StateHash(
+					((ulong) stencilMask << 32) | ((ulong) packedProperties << 0),
+					((ulong) referenceStencil << 32) | ((ulong) stencilWriteMask << 0)
+				);
+			}
+		}
+
 		/* Public Functions */
+
+		public static StateHash GetDepthStencilHash(DepthStencilState state)
+		{
+			return GetDepthStencilHash(
+				state.DepthBufferEnable,
+				state.DepthBufferWriteEnable,
+				state.DepthBufferFunction,
+				state.StencilEnable,
+				state.StencilFunction,
+				state.StencilPass,
+				state.StencilFail,
+				state.StencilDepthBufferFail,
+				state.TwoSidedStencilMode,
+				state.CounterClockwiseStencilFunction,
+				state.CounterClockwiseStencilPass,
+				state.CounterClockwiseStencilFail,
+				state.CounterClockwiseStencilDepthBufferFail,
+				state.StencilMask,
+				state.StencilWriteMask,
+				state.ReferenceStencil
+			);
+		}
 
 		public void BeginApplyDepthStencil()
 		{
@@ -250,34 +379,24 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		public void EndApplyDepthStencil()
 		{
-			// Bool -> Int32 conversion
-			int depthBufferEnable = DepthBufferEnable ? 1 : 0;
-			int depthBufferWriteEnable = DepthBufferWriteEnable ? 1 : 0;
-			int stencilEnable = StencilEnable ? 1 : 0;
-			int twoSidedStencilMode = TwoSidedStencilMode ? 1 : 0;
-
-			int packedProperties =
-				  ((int) depthBufferEnable	<< 32 - 2)
-				| ((int) depthBufferWriteEnable	<< 32 - 3)
-				| ((int) stencilEnable		<< 32 - 4)
-				| ((int) twoSidedStencilMode	<< 32 - 5)
-				| ((int) DepthBufferFunction	<< 32 - 8)
-				| ((int) StencilFunction	<< 32 - 11)
-				| ((int) CCWStencilFunction	<< 32 - 14)
-				| ((int) StencilPass		<< 32 - 17)
-				| ((int) StencilFail		<< 32 - 20)
-				| ((int) StencilDepthBufferFail	<< 32 - 23)
-				| ((int) CCWStencilFail		<< 32 - 26)
-				| ((int) CCWStencilPass		<< 32 - 29)
-				| ((int) CCWStencilDepthBufferFail);
-
-			StateHash hash = new StateHash(
-				packedProperties,
+			StateHash hash = GetDepthStencilHash(
+				DepthBufferEnable,
+				DepthBufferWriteEnable,
+				DepthBufferFunction,
+				StencilEnable,
+				StencilFunction,
+				StencilPass,
+				StencilFail,
+				StencilDepthBufferFail,
+				TwoSidedStencilMode,
+				CCWStencilFunction,
+				CCWStencilPass,
+				CCWStencilFail,
+				CCWStencilDepthBufferFail,
 				StencilMask,
 				StencilWriteMask,
 				ReferenceStencil
 			);
-
 			DepthStencilState newDepthStencil;
 			if (!depthStencilCache.TryGetValue(hash, out newDepthStencil))
 			{
@@ -302,15 +421,21 @@ namespace Microsoft.Xna.Framework.Graphics
 
 				depthStencilCache.Add(hash, newDepthStencil);
 #if VERBOSE_PIPELINECACHE
-				FNALoggerEXT.LogInfo("New DepthStencilState added to pipeline cache with hash:\n"
-							+ hash.ToString());
-				FNALoggerEXT.LogInfo("Updated size of DepthStencilState cache: "
-							+ depthStencilCache.Count);
+				FNALoggerEXT.LogInfo(
+					"New DepthStencilState added to pipeline cache with hash:\n" +
+					hash.ToString()
+				);
+				FNALoggerEXT.LogInfo(
+					"Updated size of DepthStencilState cache: " +
+					depthStencilCache.Count
+				);
 			}
 			else
 			{
-				FNALoggerEXT.LogInfo("Retrieved DepthStencilState from pipeline cache with hash:\n"
-							+ hash.ToString());
+				FNALoggerEXT.LogInfo(
+					"Retrieved DepthStencilState from pipeline cache with hash:\n" +
+					hash.ToString()
+				);
 #endif
 			}
 
@@ -335,7 +460,48 @@ namespace Microsoft.Xna.Framework.Graphics
 		private Dictionary<StateHash, RasterizerState> rasterizerCache =
 			new Dictionary<StateHash, RasterizerState>();
 
+		/* Private Hashing Functions */
+
+		private static StateHash GetRasterizerHash(
+			CullMode cullMode,
+			FillMode fillMode,
+			float depthBias,
+			bool msaa,
+			bool scissor,
+			float slopeScaleDepthBias
+		) {
+			// Bool -> Int32 conversion
+			int multiSampleAntiAlias = (msaa ? 1 : 0);
+			int scissorTestEnable = (scissor ? 1 : 0);
+
+			int packedProperties =
+				  ((int) multiSampleAntiAlias	<< 4)
+				| ((int) scissorTestEnable	<< 3)
+				| ((int) cullMode		<< 1)
+				| ((int) fillMode);
+
+			unchecked
+			{
+				return new StateHash(
+					(ulong) packedProperties,
+					(FloatToULong(slopeScaleDepthBias) << 32) | FloatToULong(depthBias)
+				);
+			}
+		}
+
 		/* Public Functions */
+
+		public static StateHash GetRasterizerHash(RasterizerState state)
+		{
+			return GetRasterizerHash(
+				state.CullMode,
+				state.FillMode,
+				state.DepthBias,
+				state.MultiSampleAntiAlias,
+				state.ScissorTestEnable,
+				state.SlopeScaleDepthBias
+			);
+		}
 
 		public void BeginApplyRasterizer()
 		{
@@ -351,23 +517,14 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		public void EndApplyRasterizer()
 		{
-			// Bool -> Int32 conversion
-			int multiSampleAntiAlias = (MultiSampleAntiAlias ? 1 : 0);
-			int scissorTestEnable = (ScissorTestEnable ? 1 : 0);
-
-			int packedProperties =
-				  ((int) multiSampleAntiAlias	<< 4)
-				| ((int) scissorTestEnable	<< 3)
-				| ((int) CullMode		<< 1)
-				| ((int) FillMode);
-
-			StateHash hash = new StateHash(
-				0,
-				packedProperties,
-				FloatToInt32(DepthBias),
-				FloatToInt32(SlopeScaleDepthBias)
+			StateHash hash = GetRasterizerHash(
+				CullMode,
+				FillMode,
+				DepthBias,
+				MultiSampleAntiAlias,
+				ScissorTestEnable,
+				SlopeScaleDepthBias
 			);
-
 			RasterizerState newRasterizer;
 			if (!rasterizerCache.TryGetValue(hash, out newRasterizer))
 			{
@@ -382,15 +539,21 @@ namespace Microsoft.Xna.Framework.Graphics
 
 				rasterizerCache.Add(hash, newRasterizer);
 #if VERBOSE_PIPELINECACHE
-				FNALoggerEXT.LogInfo("New RasterizerState added to pipeline cache with hash:\n"
-							+ hash.ToString());
-				FNALoggerEXT.LogInfo("Updated size of RasterizerState cache: "
-							+ rasterizerCache.Count);
+				FNALoggerEXT.LogInfo(
+					"New RasterizerState added to pipeline cache with hash:\n" +
+					hash.ToString()
+				);
+				FNALoggerEXT.LogInfo(
+					"Updated size of RasterizerState cache: " +
+					rasterizerCache.Count
+				);
 			}
 			else
 			{
-				FNALoggerEXT.LogInfo("Retrieved RasterizerState from pipeline cache with hash:\n"
-							+ hash.ToString());
+				FNALoggerEXT.LogInfo(
+					"Retrieved RasterizerState from pipeline cache with hash:\n" +
+					hash.ToString()
+				);
 #endif
 			}
 
@@ -416,7 +579,46 @@ namespace Microsoft.Xna.Framework.Graphics
 		private Dictionary<StateHash, SamplerState> samplerCache =
 			new Dictionary<StateHash, SamplerState>();
 
+		/* Private Hashing Functions */
+
+		private static StateHash GetSamplerHash(
+			TextureAddressMode addressU,
+			TextureAddressMode addressV,
+			TextureAddressMode addressW,
+			int maxAnisotropy,
+			int maxMipLevel,
+			float mipLODBias,
+			TextureFilter filter
+		) {
+			int filterAndAddresses =
+				  ((int) filter		<< 6)
+				| ((int) addressU	<< 4)
+				| ((int) addressV	<< 2)
+				| ((int) addressW);
+
+			unchecked
+			{
+				return new StateHash(
+					((ulong) maxAnisotropy << 32) | ((ulong) filterAndAddresses << 0),
+					(FloatToULong(mipLODBias) << 32) | ((ulong) maxMipLevel << 0)
+				);
+			}
+		}
+
 		/* Public Functions */
+
+		public static StateHash GetSamplerHash(SamplerState state)
+		{
+			return GetSamplerHash(
+				state.AddressU,
+				state.AddressV,
+				state.AddressW,
+				state.MaxAnisotropy,
+				state.MaxMipLevel,
+				state.MipMapLevelOfDetailBias,
+				state.Filter
+			);
+		}
 
 		public void BeginApplySampler(SamplerStateCollection samplers, int register)
 		{
@@ -433,19 +635,15 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		public void EndApplySampler(SamplerStateCollection samplers, int register)
 		{
-			int filterAndAddresses =
-				  ((int) Filter		<< 6)
-				| ((int) AddressU	<< 4)
-				| ((int) AddressV	<< 2)
-				| ((int) AddressW);
-
-			StateHash hash = new StateHash(
-				filterAndAddresses,
+			StateHash hash = GetSamplerHash(
+				AddressU,
+				AddressV,
+				AddressW,
 				MaxAnisotropy,
 				MaxMipLevel,
-				FloatToInt32(MipMapLODBias)
+				MipMapLODBias,
+				Filter
 			);
-
 			SamplerState newSampler;
 			if (!samplerCache.TryGetValue(hash, out newSampler))
 			{
@@ -461,15 +659,21 @@ namespace Microsoft.Xna.Framework.Graphics
 
 				samplerCache.Add(hash, newSampler);
 #if VERBOSE_PIPELINECACHE
-				FNALoggerEXT.LogInfo("New SamplerState added to pipeline cache with hash:\n"
-							+ hash.ToString());
-				FNALoggerEXT.LogInfo("Updated size of SamplerState cache: "
-							+ samplerCache.Count);
+				FNALoggerEXT.LogInfo(
+					"New SamplerState added to pipeline cache with hash:\n" +
+					hash.ToString()
+				);
+				FNALoggerEXT.LogInfo(
+					"Updated size of SamplerState cache: " +
+					samplerCache.Count
+				);
 			}
 			else
 			{
-				FNALoggerEXT.LogInfo("Retrieved SamplerState from pipeline cache with hash:\n"
-							+ hash.ToString());
+				FNALoggerEXT.LogInfo(
+					"Retrieved SamplerState from pipeline cache with hash:\n" +
+					hash.ToString()
+				);
 #endif
 			}
 
@@ -478,11 +682,65 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		#endregion
 
+		#region Vertex Declaration Hashing Methods
+
+		/* The algorithm for these hashing methods
+		 * is taken from Josh Bloch's "Effective Java".
+		 * (https://stackoverflow.com/a/113600/12492383)
+		 *
+		 * FIXME: Is there a better way to hash this?
+		 * -caleb
+		 */
+
+		private const ulong HASH_FACTOR = 39;
+
+		public static ulong GetVertexDeclarationHash(
+			VertexDeclaration declaration,
+			ulong vertexShader
+		) {
+			ulong hash = vertexShader;
+			unchecked
+			{
+				for (int i = 0; i < declaration.elements.Length; i += 1)
+				{
+					hash = hash * HASH_FACTOR + (
+						(ulong) declaration.elements[i].GetHashCode()
+					);
+				}
+				hash = hash * HASH_FACTOR + (ulong) declaration.VertexStride;
+			}
+			return hash;
+		}
+
+		public static ulong GetVertexBindingHash(
+			VertexBufferBinding[] bindings,
+			int numBindings,
+			ulong vertexShader
+		) {
+			ulong hash = vertexShader;
+			unchecked
+			{
+				for (int i = 0; i < numBindings; i += 1)
+				{
+					VertexBufferBinding binding = bindings[i];
+					hash = hash * HASH_FACTOR + (ulong) binding.InstanceFrequency;
+					hash = hash * HASH_FACTOR + GetVertexDeclarationHash(
+						binding.VertexBuffer.VertexDeclaration,
+						vertexShader
+					);
+				}
+			}
+			return hash;
+		}
+
+		#endregion
+
 		#region Private Helper Methods
 
-		private unsafe int FloatToInt32(float f)
+		private static unsafe ulong FloatToULong(float f)
 		{
-			return *((int *) &f);
+			uint uintRep = *((uint *) &f);
+			return unchecked((ulong) uintRep);
 		}
 
 		#endregion

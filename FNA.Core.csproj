@@ -10,6 +10,14 @@
 		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 		<GenerateAssemblyInfo>false</GenerateAssemblyInfo>
 	</PropertyGroup>
+	<PropertyGroup>
+		<FNASettingsPropsFilePath>$(SolutionDir)FNA.Settings.props</FNASettingsPropsFilePath>
+	</PropertyGroup>
+	<Import Project="$(FNASettingsPropsFilePath)" Condition="Exists('$(FNASettingsPropsFilePath)')" />
+	<Target Name="ValidatePropsFilePath" BeforeTargets="BeforeBuild">
+		<Message Importance="High" Text="No property overrides found at '$(FNASettingsPropsFilePath)'" Condition="!Exists('$(FNASettingsPropsFilePath)')" />
+		<Message Importance="High" Text="Loaded property overrides from '$(FNASettingsPropsFilePath)'" Condition="Exists('$(FNASettingsPropsFilePath)')" />
+	</Target>
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
 	  <DefineConstants>TRACE;DISABLE_THREADING</DefineConstants>
 	</PropertyGroup>
@@ -147,6 +155,8 @@
 		<Compile Include="src\FNAPlatform\FNAPlatform.cs" />
 		<Compile Include="src\FNAPlatform\FNAWindow.cs" />
 		<Compile Include="src\FNAPlatform\IGLDevice.cs" />
+		<Compile Include="src\FNAPlatform\MetalDevice.cs" />
+		<Compile Include="src\FNAPlatform\MetalDevice_MTL.cs" />
 		<Compile Include="src\FNAPlatform\ModernGLDevice.cs" />
 		<Compile Include="src\FNAPlatform\ModernGLDevice_GL.cs" />
 		<Compile Include="src\FNAPlatform\OpenGLDevice.cs" />

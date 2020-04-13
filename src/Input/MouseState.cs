@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -44,15 +44,6 @@ namespace Microsoft.Xna.Framework.Input
 		}
 
 		/// <summary>
-		/// Gets state of the middle mouse button.
-		/// </summary>
-		public ButtonState MiddleButton
-		{
-			get;
-			internal set;
-		}
-
-		/// <summary>
 		/// Gets state of the right mouse button.
 		/// </summary>
 		public ButtonState RightButton
@@ -62,9 +53,9 @@ namespace Microsoft.Xna.Framework.Input
 		}
 
 		/// <summary>
-		/// Returns cumulative scroll wheel value since the game start.
+		/// Gets state of the middle mouse button.
 		/// </summary>
-		public int ScrollWheelValue
+		public ButtonState MiddleButton
 		{
 			get;
 			internal set;
@@ -83,6 +74,15 @@ namespace Microsoft.Xna.Framework.Input
 		/// Gets state of the XButton2.
 		/// </summary>
 		public ButtonState XButton2
+		{
+			get;
+			internal set;
+		}
+
+		/// <summary>
+		/// Returns cumulative scroll wheel value since the game start.
+		/// </summary>
+		public int ScrollWheelValue
 		{
 			get;
 			internal set;
@@ -175,6 +175,61 @@ namespace Microsoft.Xna.Framework.Input
 		public override int GetHashCode()
 		{
 			return base.GetHashCode();
+		}
+
+		/// <summary>
+		/// Returns a string describing the mouse state.
+		/// </summary>
+		public override string ToString()
+		{
+			string buttons = string.Empty;
+			if (LeftButton == ButtonState.Pressed)
+			{
+				buttons = "Left";
+			}
+			if (RightButton == ButtonState.Pressed)
+			{
+				if (buttons.Length > 0)
+				{
+					buttons += " ";
+				}
+				buttons += "Right";
+			}
+			if (MiddleButton == ButtonState.Pressed)
+			{
+				if (buttons.Length > 0)
+				{
+					buttons += " ";
+				}
+				buttons += "Middle";
+			}
+			if (XButton1 == ButtonState.Pressed)
+			{
+				if (buttons.Length > 0)
+				{
+					buttons += " ";
+				}
+				buttons += "XButton1";
+			}
+			if (XButton2 == ButtonState.Pressed)
+			{
+				if (buttons.Length > 0)
+				{
+					buttons += " ";
+				}
+				buttons += "XButton2";
+			}
+			if (string.IsNullOrEmpty(buttons))
+			{
+				buttons = "None";
+			}
+			return string.Format(
+				"[MouseState X={0}, Y={1}, Buttons={2}, Wheel={3}]",
+				X,
+				Y,
+				buttons,
+				ScrollWheelValue
+			);
 		}
 
 		#endregion

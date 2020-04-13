@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -38,7 +38,7 @@ namespace Microsoft.Xna.Framework.Storage
 					// null drive means the OS denied info, so we get to guess!
 					if (drive == null)
 					{
-					    return long.MaxValue;
+						return long.MaxValue;
 					}
 					return drive.AvailableFreeSpace;
 				}
@@ -65,7 +65,7 @@ namespace Microsoft.Xna.Framework.Storage
 					// null drive means the OS denied info, so we get to guess!
 					if (drive == null)
 					{
-					    return true;
+						return true;
 					}
 					return drive.IsReady;
 				}
@@ -89,7 +89,7 @@ namespace Microsoft.Xna.Framework.Storage
 					// null drive means the OS denied info, so we get to guess!
 					if (drive == null)
 					{
-					    return long.MaxValue;
+						return long.MaxValue;
 					}
 					return drive.TotalSize;
 				}

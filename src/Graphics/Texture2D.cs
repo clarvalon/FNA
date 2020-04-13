@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -98,7 +98,8 @@ namespace Microsoft.Xna.Framework.Graphics
 				Format,
 				Width,
 				Height,
-				LevelCount
+				LevelCount,
+				(this is IRenderTarget)
 			);
 		}
 
@@ -343,9 +344,15 @@ namespace Microsoft.Xna.Framework.Graphics
 			}
 
 			// Read the image data from the stream
-			int width, height;
-			byte[] pixels;
-			TextureDataFromStreamEXT(stream, out width, out height, out pixels);
+			int width, height, len;
+			IntPtr pixels;
+			FNAPlatform.TextureDataFromStreamPtr(
+				stream,
+				out width,
+				out height,
+				out pixels,
+				out len
+			);
 
 			// Create the Texture2D from the raw pixel data
 			Texture2D result = new Texture2D(
@@ -353,7 +360,13 @@ namespace Microsoft.Xna.Framework.Graphics
 				width,
 				height
 			);
-			result.SetData(pixels);
+			result.SetDataPointerEXT(
+				0,
+				null,
+				pixels,
+				len
+			);
+			Marshal.FreeHGlobal(pixels);
 			return result;
 		}
 
@@ -365,13 +378,14 @@ namespace Microsoft.Xna.Framework.Graphics
 			bool zoom
 		) {
 			// Read the image data from the stream
-			int realWidth, realHeight;
-			byte[] pixels;
-			TextureDataFromStreamEXT(
+			int realWidth, realHeight, len;
+			IntPtr pixels;
+			FNAPlatform.TextureDataFromStreamPtr(
 				stream,
 				out realWidth,
 				out realHeight,
 				out pixels,
+				out len,
 				width,
 				height,
 				zoom
@@ -383,7 +397,13 @@ namespace Microsoft.Xna.Framework.Graphics
 				realWidth,
 				realHeight
 			);
-			result.SetData(pixels);
+			result.SetDataPointerEXT(
+				0,
+				null,
+				pixels,
+				len
+			);
+			Marshal.FreeHGlobal(pixels);
 			return result;
 		}
 

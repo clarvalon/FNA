@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -37,6 +37,45 @@ namespace Microsoft.Xna.Framework
 
 			// Environment.GetEnvironmentVariable("FNA_PLATFORM_BACKEND");
 
+			// Built-in command line arguments
+			LaunchParameters args = new LaunchParameters();
+			string arg;
+			if (args.TryGetValue("enablehighdpi", out arg) && arg == "1")
+			{
+				Environment.SetEnvironmentVariable(
+					"FNA_GRAPHICS_ENABLE_HIGHDPI",
+					"1"
+				);
+			}
+			if (args.TryGetValue("gldevice", out arg))
+			{
+				Environment.SetEnvironmentVariable(
+					"FNA_GRAPHICS_FORCE_GLDEVICE",
+					arg
+				);
+			}
+			if (args.TryGetValue("mojoshaderprofile", out arg))
+			{
+				Environment.SetEnvironmentVariable(
+					"FNA_GRAPHICS_MOJOSHADER_PROFILE",
+					arg
+				);
+			}
+			if (args.TryGetValue("backbufferscalenearest", out arg) && arg == "1")
+			{
+				Environment.SetEnvironmentVariable(
+					"FNA_GRAPHICS_BACKBUFFER_SCALE_NEAREST",
+					"1"
+				);
+			}
+			if (args.TryGetValue("usescancodes", out arg) && arg == "1")
+			{
+				Environment.SetEnvironmentVariable(
+					"FNA_KEYBOARD_USE_SCANCODES",
+					"1"
+				);
+			}
+
 			CreateWindow =			SDL2_FNAPlatform.CreateWindow;
 			DisposeWindow =			SDL2_FNAPlatform.DisposeWindow;
 			ApplyWindowChanges =		SDL2_FNAPlatform.ApplyWindowChanges;
@@ -68,6 +107,7 @@ namespace Microsoft.Xna.Framework
 			GetDriveInfo =			SDL2_FNAPlatform.GetDriveInfo;
 			ShowRuntimeError =		SDL2_FNAPlatform.ShowRuntimeError;
 			TextureDataFromStream =		SDL2_FNAPlatform.TextureDataFromStream;
+			TextureDataFromStreamPtr =	SDL2_FNAPlatform.TextureDataFromStreamPtr;
 			SavePNG =			SDL2_FNAPlatform.SavePNG;
 			SaveJPG =			SDL2_FNAPlatform.SaveJPG;
 			GetMicrophones =		SDL2_FNAPlatform.GetMicrophones;
@@ -95,7 +135,7 @@ namespace Microsoft.Xna.Framework
 			}
 
 			AppDomain.CurrentDomain.ProcessExit += SDL2_FNAPlatform.ProgramExit;
-			TitleLocation = SDL2_FNAPlatform.ProgramInit();
+			TitleLocation = SDL2_FNAPlatform.ProgramInit(args);
 		}
 
 		#endregion
@@ -238,6 +278,18 @@ namespace Microsoft.Xna.Framework
 			bool zoom = false
 		);
 		public static readonly TextureDataFromStreamFunc TextureDataFromStream;
+
+		public delegate void TextureDataFromStreamPtrFunc(
+			Stream stream,
+			out int width,
+			out int height,
+			out IntPtr pixels,
+			out int len,
+			int reqWidth = -1,
+			int reqHeight = -1,
+			bool zoom = false
+		);
+		public static readonly TextureDataFromStreamPtrFunc TextureDataFromStreamPtr;
 
 		public delegate void SavePNGFunc(
 			Stream stream,

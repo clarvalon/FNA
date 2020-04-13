@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -30,7 +30,7 @@ namespace Microsoft.Xna.Framework.Content
 			byte[] data = input.ReadBytes(vertexCount * declaration.VertexStride);
 
 			VertexBuffer buffer = new VertexBuffer(
-				input.GraphicsDevice,
+				input.ContentManager.GetGraphicsDevice(),
 				declaration,
 				vertexCount,
 				BufferUsage.None

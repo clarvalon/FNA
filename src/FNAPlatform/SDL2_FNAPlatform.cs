@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -11,7 +11,6 @@
 using System;
 using System.IO;
 using System.Text;
-using System.Reflection;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
@@ -36,10 +35,22 @@ namespace Microsoft.Xna.Framework
 		) == "1";
 
 		private static bool SupportsGlobalMouse;
+		private static string ForcedGLDevice;
+		private static string ActualGLDevice;
 
 		// For iOS high dpi support
 		private static int RetinaWidth;
 		private static int RetinaHeight;
+
+		#endregion
+
+		#region Graphics Backend String Constants
+
+		private const string OPENGL = "OpenGLDevice";
+		private const string MODERNGL = "ModernGLDevice";
+		private const string THREADEDGL = "ThreadedGLDevice";
+		private const string METAL = "MetalDevice";
+		private const string VULKAN = "VulkanDevice";
 
 		#endregion
 
@@ -52,7 +63,7 @@ namespace Microsoft.Xna.Framework
 
 		#region Init/Exit Methods
 
-		public static string ProgramInit()
+		public static string ProgramInit(LaunchParameters args)
 		{
 			// This is how we can weed out cases where fnalibs is missing
 			try
@@ -131,6 +142,51 @@ namespace Microsoft.Xna.Framework
 				);
 			}
 
+			// Built-in SDL2 command line arguments
+			string arg;
+			if (args.TryGetValue("disablelateswaptear", out arg) && arg == "1")
+			{
+				Environment.SetEnvironmentVariable(
+					"FNA_OPENGL_DISABLE_LATESWAPTEAR",
+					"1"
+				);
+			}
+			if (args.TryGetValue("glprofile", out arg))
+			{
+				if (arg == "es3")
+				{
+					Environment.SetEnvironmentVariable(
+						"FNA_OPENGL_FORCE_ES3",
+						"1"
+					);
+				}
+				else if (arg == "core")
+				{
+					Environment.SetEnvironmentVariable(
+						"FNA_OPENGL_FORCE_CORE_PROFILE",
+						"1"
+					);
+				}
+				else if (arg == "compatibility")
+				{
+					Environment.SetEnvironmentVariable(
+						"FNA_OPENGL_FORCE_COMPATIBILITY_PROFILE",
+						"1"
+					);
+				}
+			}
+			if (args.TryGetValue("angle", out arg) && arg == "1")
+			{
+				Environment.SetEnvironmentVariable(
+					"FNA_OPENGL_FORCE_ES3",
+					"1"
+				);
+				Environment.SetEnvironmentVariable(
+					"SDL_OPENGL_ES_DRIVER",
+					"1"
+				);
+			}
+
 			// This _should_ be the first real SDL call we make...
 			SDL.SDL_Init(
 				SDL.SDL_INIT_VIDEO |
@@ -146,6 +202,16 @@ namespace Microsoft.Xna.Framework
 				SDL.SDL_SetHint(
 					SDL.SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS,
 					"1"
+				);
+			}
+
+			// By default, assume physical layout, since XNA games probably assume XInput
+			hint = SDL.SDL_GetHint(SDL.SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS);
+			if (String.IsNullOrEmpty(hint))
+			{
+				SDL.SDL_SetHint(
+					SDL.SDL_HINT_GAMECONTROLLER_USE_BUTTON_LABELS,
+					"0"
 				);
 			}
 
@@ -194,11 +260,60 @@ namespace Microsoft.Xna.Framework
 			return false;
 		}
 
+		private static bool PrepareMTLAttributes()
+		{
+			if (	String.IsNullOrEmpty(ForcedGLDevice) ||
+				!ForcedGLDevice.Equals(METAL)		)
+			{
+				return false;
+			}
+
+#if DEBUG
+			// Always enable the validation layer in debug mode
+			Environment.SetEnvironmentVariable(
+				"METAL_DEVICE_WRAPPER_TYPE",
+				"1"
+			);
+#endif
+
+			if (OSVersion.Equals("Mac OS X"))
+			{
+				// Let's find out if the OS supports Metal...
+				try
+				{
+					if (MetalDevice.MTLCreateSystemDefaultDevice() != IntPtr.Zero)
+					{
+						// We're good to go!
+						return true;
+					}
+				}
+				catch
+				{
+					// The OS is too old for Metal!
+					return false;
+				}
+			}
+			else if (OSVersion.Equals("iOS") || OSVersion.Equals("tvOS"))
+			{
+				/* We only support iOS/tvOS 11.0+ so
+				 * Metal is guaranteed to be supported.
+				 */
+				return true;
+			}
+
+			// Oh well, to OpenGL we go!
+			return false;
+		}
+
 		private static bool PrepareGLAttributes()
 		{
-			/* TODO: For platforms not using OpenGL (Vulkan/Metal),
-			 * return false to avoid OpenGL WSI calls.
-			 */
+			if (	!String.IsNullOrEmpty(ForcedGLDevice) &&
+				!ForcedGLDevice.Equals(OPENGL) &&
+				!ForcedGLDevice.Equals(MODERNGL) &&
+				!ForcedGLDevice.Equals(THREADEDGL)	)
+			{
+				return false;
+			}
 
 			// GLContext environment variables
 			bool forceES3 = Environment.GetEnvironmentVariable(
@@ -220,7 +335,6 @@ namespace Microsoft.Xna.Framework
 				OSVersion.Equals("Android") ||
 				OSVersion.Equals("Emscripten")
 			);
-
 
 			int depthSize = 24;
 			int stencilSize = 8;
@@ -323,7 +437,6 @@ namespace Microsoft.Xna.Framework
 
 		public static GameWindow CreateWindow()
 		{
-
 			// Set and initialize the SDL2 window
 			SDL.SDL_WindowFlags initFlags = (
 				SDL.SDL_WindowFlags.SDL_WINDOW_HIDDEN |
@@ -331,14 +444,36 @@ namespace Microsoft.Xna.Framework
 				SDL.SDL_WindowFlags.SDL_WINDOW_MOUSE_FOCUS
 			);
 
-			bool vulkan = false, opengl = false;
+			// Did the user force a particular GLDevice?
+			ForcedGLDevice = Environment.GetEnvironmentVariable(
+				"FNA_GRAPHICS_FORCE_GLDEVICE"
+			);
+
+			bool vulkan = false, metal = false, opengl = false;
 			if (vulkan = PrepareVKAttributes())
 			{
 				initFlags |= SDL.SDL_WindowFlags.SDL_WINDOW_VULKAN;
+				ActualGLDevice = VULKAN;
+			}
+			else if (metal = PrepareMTLAttributes())
+			{
+				SDL.SDL_SetHint(SDL.SDL_HINT_VIDEO_EXTERNAL_CONTEXT, "1");
+
+				// Metal doesn't require a window flag
+				ActualGLDevice = METAL;
 			}
 			else if (opengl = PrepareGLAttributes())
 			{
 				initFlags |= SDL.SDL_WindowFlags.SDL_WINDOW_OPENGL;
+				if (	ForcedGLDevice == MODERNGL ||
+					ForcedGLDevice == THREADEDGL	)
+				{
+					ActualGLDevice = ForcedGLDevice;
+				}
+				else
+				{
+					ActualGLDevice = OPENGL;
+				}
 			}
 
 			if (Environment.GetEnvironmentVariable("FNA_GRAPHICS_ENABLE_HIGHDPI") == "1")
@@ -373,14 +508,21 @@ namespace Microsoft.Xna.Framework
 			// We hide the mouse cursor by default.
 			OnIsMouseVisibleChanged(false);
 
-			/* iOS requires a GL context to get the drawable size
-			 * of the screen, so we create a temporary one here.
-			 * -caleb
+			/* When using OpenGL, iOS and tvOS require
+			 * an active GL context to get the drawable
+			 * size of the screen.
+			 *
+			 * When using Metal, all Apple platforms
+			 * require a view to get the drawable size.
 			 */
-			IntPtr tempGLContext = IntPtr.Zero;
-			if (OSVersion.Equals("iOS"))
+			IntPtr tempContext = IntPtr.Zero;
+			if (opengl && (OSVersion.Equals("iOS") || OSVersion.Equals("tvOS")))
 			{
-				tempGLContext = SDL.SDL_GL_CreateContext(window);
+				tempContext = SDL.SDL_GL_CreateContext(window);
+			}
+			else if (metal)
+			{
+				tempContext = SDL.SDL_Metal_CreateView(window);
 			}
 
 			/* If high DPI is not found, unset the HIGHDPI var.
@@ -392,13 +534,17 @@ namespace Microsoft.Xna.Framework
 			{
 				SDL.SDL_Vulkan_GetDrawableSize(window, out drawX, out drawY);
 			}
+			else if (metal)
+			{
+				MetalDevice.GetDrawableSizeFromView(tempContext, out drawX, out drawY);
+			}
 			else if (opengl)
 			{
 				SDL.SDL_GL_GetDrawableSize(window, out drawX, out drawY);
 			}
 			else
 			{
-				throw new InvalidOperationException("Metal? Glide? What?");
+				throw new InvalidOperationException("DirectX? Glide? What?");
 			}
 			if (	drawX == GraphicsDeviceManager.DefaultBackBufferWidth &&
 				drawY == GraphicsDeviceManager.DefaultBackBufferHeight	)
@@ -412,10 +558,17 @@ namespace Microsoft.Xna.Framework
 				RetinaHeight = drawY;
 			}
 
-			// We're done with that temporary GL context.
-			if (tempGLContext != IntPtr.Zero)
+			// We're done with that temporary context.
+			if (tempContext != IntPtr.Zero)
 			{
-				SDL.SDL_GL_DeleteContext(tempGLContext);
+				if (opengl)
+				{
+					SDL.SDL_GL_DeleteContext(tempContext);
+				}
+				else if (metal)
+				{
+					SDL.SDL_Metal_DestroyView(tempContext);
+				}
 			}
 
 			return new FNAWindow(
@@ -1142,19 +1295,54 @@ namespace Microsoft.Xna.Framework
 			PresentationParameters presentationParameters,
 			GraphicsAdapter adapter
 		) {
-			// This loads the OpenGL entry points.
-			string glDevice = Environment.GetEnvironmentVariable("FNA_GRAPHICS_FORCE_GLDEVICE");
-			if (glDevice == "ModernGLDevice")
+			if (string.IsNullOrEmpty(ActualGLDevice))
 			{
-				// FIXME: This is still experimental! -flibit
-				return new ModernGLDevice(presentationParameters, adapter);
+				/* This may be a GraphicsDevice with no Game.
+				 * in that case, try this var one last time.
+				 */
+				ActualGLDevice = Environment.GetEnvironmentVariable(
+					"FNA_GRAPHICS_FORCE_GLDEVICE"
+				);
+				if (string.IsNullOrEmpty(ActualGLDevice))
+				{
+					// No device requested at all? Try to guess.
+					SDL.SDL_WindowFlags flags = (SDL.SDL_WindowFlags) SDL.SDL_GetWindowFlags(
+						presentationParameters.DeviceWindowHandle
+					);
+					if ((flags & SDL.SDL_WindowFlags.SDL_WINDOW_VULKAN) == SDL.SDL_WindowFlags.SDL_WINDOW_VULKAN)
+					{
+						ActualGLDevice = VULKAN;
+					}
+					else if ((flags & SDL.SDL_WindowFlags.SDL_WINDOW_OPENGL) == SDL.SDL_WindowFlags.SDL_WINDOW_OPENGL)
+					{
+						ActualGLDevice = OPENGL;
+					}
+					else if (	OSVersion.Equals("Mac OS X") ||
+							OSVersion.Equals("iOS") ||
+							OSVersion.Equals("tvOS")	)
+					{
+						ActualGLDevice = METAL;
+					}
+				}
 			}
-			if (glDevice == "ThreadedGLDevice")
+
+			switch (ActualGLDevice)
 			{
+			case VULKAN:	break; // Maybe some day!
+			case METAL:
+				return new MetalDevice(presentationParameters);
+			case MODERNGL:
 				// FIXME: This is still experimental! -flibit
-				return new ThreadedGLDevice(presentationParameters, adapter);
+				return new ModernGLDevice(presentationParameters);
+			case THREADEDGL:
+				// FIXME: This is still experimental! -flibit
+				return new ThreadedGLDevice(presentationParameters);
+			case OPENGL:
+				return new OpenGLDevice(presentationParameters);
 			}
-			return new OpenGLDevice(presentationParameters, adapter);
+			throw new NotSupportedException(
+				"The requested GLDevice is not present!"
+			);
 		}
 
 		#endregion
@@ -1286,23 +1474,18 @@ namespace Microsoft.Xna.Framework
 
 		private static string GetBaseDirectory()
 		{
-			if (	OSVersion.Equals("Windows") ||
-				OSVersion.Equals("Mac OS X") ||
-				OSVersion.Equals("Linux") ||
-				OSVersion.Equals("FreeBSD") ||
-				OSVersion.Equals("OpenBSD") ||
-				OSVersion.Equals("NetBSD")	)
+			if (Environment.GetEnvironmentVariable("FNA_SDL2_FORCE_BASE_PATH") != "1")
 			{
-				/* This is mostly here for legacy compatibility.
-				 * For most platforms this should be the same as
-				 * SDL_GetBasePath, but some platforms (Apple's)
-				 * will have a separate Resources folder that is
-				 * the "base" directory for applications.
-				 *
-				 * TODO: Remove this and endure the breakage.
-				 * -flibit
-				 */
-				return AppDomain.CurrentDomain.BaseDirectory;
+				// If your platform uses a CLR, you want to be in this list!
+				if (	OSVersion.Equals("Windows") ||
+					OSVersion.Equals("Mac OS X") ||
+					OSVersion.Equals("Linux") ||
+					OSVersion.Equals("FreeBSD") ||
+					OSVersion.Equals("OpenBSD") ||
+					OSVersion.Equals("NetBSD")	)
+				{
+					return AppDomain.CurrentDomain.BaseDirectory;
+				}
 			}
 			string result = SDL.SDL_GetBasePath();
 			if (string.IsNullOrEmpty(result))
@@ -1499,14 +1682,11 @@ namespace Microsoft.Xna.Framework
 
 		#region Image I/O Methods
 
-		public static void TextureDataFromStream(
+		private static IntPtr TextureDataFromStreamInternal(
 			Stream stream,
-			out int width,
-			out int height,
-			out byte[] pixels,
-			int reqWidth = -1,
-			int reqHeight = -1,
-			bool zoom = false
+			int reqWidth,
+			int reqHeight,
+			bool zoom
 		) {
 			// Load the SDL_Surface* from RWops, get the image data
 			IntPtr surface = SDL_image.IMG_Load_RW(
@@ -1520,10 +1700,7 @@ namespace Microsoft.Xna.Framework
 					"TextureDataFromStream: " +
 					SDL.SDL_GetError()
 				);
-				width = 0;
-				height = 0;
-				pixels = null;
-				return;
+				return IntPtr.Zero;
 			}
 			surface = INTERNAL_convertSurfaceFormat(surface);
 
@@ -1626,6 +1803,52 @@ namespace Microsoft.Xna.Framework
 				surface = newSurface;
 			}
 
+			return surface;
+		}
+
+		private static unsafe void TextureDataClearAlpha(
+			byte* pixels,
+			int len
+		) {
+			/* Ensure that the alpha pixels are... well, actual alpha.
+			 * You think this looks stupid, but be assured: Your paint program is
+			 * almost certainly even stupider.
+			 * -flibit
+			 */
+			for (int i = 0; i < len; i += 4, pixels += 4)
+			{
+				if (pixels[3] == 0)
+				{
+					pixels[0] = 0;
+					pixels[1] = 0;
+					pixels[2] = 0;
+				}
+			}
+		}
+
+		public static void TextureDataFromStream(
+			Stream stream,
+			out int width,
+			out int height,
+			out byte[] pixels,
+			int reqWidth = -1,
+			int reqHeight = -1,
+			bool zoom = false
+		) {
+			IntPtr surface = TextureDataFromStreamInternal(
+				stream,
+				reqWidth,
+				reqHeight,
+				zoom
+			);
+			if (surface == IntPtr.Zero)
+			{
+				width = 0;
+				height = 0;
+				pixels = null;
+				return;
+			}
+
 			// Copy surface data to output managed byte array
 			unsafe
 			{
@@ -1633,24 +1856,54 @@ namespace Microsoft.Xna.Framework
 				width = surPtr->w;
 				height = surPtr->h;
 				pixels = new byte[width * height * 4]; // MUST be SurfaceFormat.Color!
-				Marshal.Copy(surPtr->pixels, pixels, 0, pixels.Length);
-			}
-			SDL.SDL_FreeSurface(surface);
 
-			/* Ensure that the alpha pixels are... well, actual alpha.
-			 * You think this looks stupid, but be assured: Your paint program is
-			 * almost certainly even stupider.
-			 * -flibit
-			 */
-			for (int i = 0; i < pixels.Length; i += 4)
-			{
-				if (pixels[i + 3] == 0)
+				Marshal.Copy(surPtr->pixels, pixels, 0, pixels.Length);
+				fixed (byte* pixPtr = &pixels[0])
 				{
-					pixels[i] = 0;
-					pixels[i + 1] = 0;
-					pixels[i + 2] = 0;
+					TextureDataClearAlpha(pixPtr, pixels.Length);
 				}
 			}
+			SDL.SDL_FreeSurface(surface);
+		}
+
+		public static void TextureDataFromStreamPtr(
+			Stream stream,
+			out int width,
+			out int height,
+			out IntPtr pixels,
+			out int len,
+			int reqWidth = -1,
+			int reqHeight = -1,
+			bool zoom = false
+		) {
+			IntPtr surface = TextureDataFromStreamInternal(
+				stream,
+				reqWidth,
+				reqHeight,
+				zoom
+			);
+			if (surface == IntPtr.Zero)
+			{
+				width = 0;
+				height = 0;
+				pixels = IntPtr.Zero;
+				len = 0;
+				return;
+			}
+
+			// Copy surface data to output managed byte array
+			unsafe
+			{
+				SDL.SDL_Surface* surPtr = (SDL.SDL_Surface*) surface;
+				width = surPtr->w;
+				height = surPtr->h;
+				len = width * height * 4;
+				pixels = Marshal.AllocHGlobal(len); // MUST be SurfaceFormat.Color!
+
+				SDL.SDL_memcpy(pixels, surPtr->pixels, (IntPtr) len);
+				TextureDataClearAlpha((byte*) pixels, len);
+			}
+			SDL.SDL_FreeSurface(surface);
 		}
 
 		public static void SavePNG(
@@ -1795,62 +2048,17 @@ namespace Microsoft.Xna.Framework
 
 		private static class FakeRWops
 		{
-			[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-			private delegate long SizeFunc(IntPtr context);
-
-			[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-			private delegate long SeekFunc(
-				IntPtr context,
-				long offset,
-				int whence
-			);
-
-			[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-			private delegate IntPtr ReadFunc(
-				IntPtr context,
-				IntPtr ptr,
-				IntPtr size,
-				IntPtr maxnum
-			);
-
-			[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-			private delegate IntPtr WriteFunc(
-				IntPtr context,
-				IntPtr ptr,
-				IntPtr size,
-				IntPtr num
-			);
-
-			[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-			private delegate int CloseFunc(IntPtr context);
-
-			[StructLayout(LayoutKind.Sequential)]
-			private struct PartialRWops
-			{
-				public IntPtr size;
-				public IntPtr seek;
-				public IntPtr read;
-				public IntPtr write;
-				public IntPtr close;
-			}
-
-			[DllImport("SDL2", CallingConvention = CallingConvention.Cdecl)]
-			private static extern IntPtr SDL_AllocRW();
-
-			[DllImport("SDL2", CallingConvention = CallingConvention.Cdecl)]
-			private static extern void SDL_FreeRW(IntPtr area);
-
 			private static readonly Dictionary<IntPtr, Stream> streamMap =
 				new Dictionary<IntPtr, Stream>();
 
 			// Based on PNG_ZBUF_SIZE default
 			private static byte[] temp = new byte[8192];
 
-			private static readonly SizeFunc sizeFunc = size;
-			private static readonly SeekFunc seekFunc = seek;
-			private static readonly ReadFunc readFunc = read;
-			private static readonly WriteFunc writeFunc = write;
-			private static readonly CloseFunc closeFunc = close;
+			private static readonly SDL.SDLRWopsSizeCallback sizeFunc = size;
+			private static readonly SDL.SDLRWopsSeekCallback seekFunc = seek;
+			private static readonly SDL.SDLRWopsReadCallback readFunc = read;
+			private static readonly SDL.SDLRWopsWriteCallback writeFunc = write;
+			private static readonly SDL.SDLRWopsCloseCallback closeFunc = close;
 			private static readonly IntPtr sizePtr =
 				Marshal.GetFunctionPointerForDelegate(sizeFunc);
 			private static readonly IntPtr seekPtr =
@@ -1864,10 +2072,10 @@ namespace Microsoft.Xna.Framework
 
 			public static IntPtr Alloc(Stream stream)
 			{
-				IntPtr rwops = SDL_AllocRW();
+				IntPtr rwops = SDL.SDL_AllocRW();
 				unsafe
 				{
-					PartialRWops* p = (PartialRWops*) rwops;
+					SDL.SDL_RWops* p = (SDL.SDL_RWops*) rwops;
 					p->size = sizePtr;
 					p->seek = seekPtr;
 					p->read = readPtr;
@@ -1890,7 +2098,7 @@ namespace Microsoft.Xna.Framework
 				return temp;
 			}
 
-			[ObjCRuntime.MonoPInvokeCallback(typeof(SizeFunc))]
+			[ObjCRuntime.MonoPInvokeCallback(typeof(SDL.SDLRWopsSizeCallback))]
 			private static long size(IntPtr context)
 			{
 				Stream stream;
@@ -1901,7 +2109,7 @@ namespace Microsoft.Xna.Framework
 				return stream.Length;
 			}
 
-			[ObjCRuntime.MonoPInvokeCallback(typeof(SeekFunc))]
+			[ObjCRuntime.MonoPInvokeCallback(typeof(SDL.SDLRWopsSeekCallback))]
 			private static long seek(IntPtr context, long offset, int whence)
 			{
 				Stream stream;
@@ -1913,7 +2121,7 @@ namespace Microsoft.Xna.Framework
 				return stream.Position;
 			}
 
-			[ObjCRuntime.MonoPInvokeCallback(typeof(ReadFunc))]
+			[ObjCRuntime.MonoPInvokeCallback(typeof(SDL.SDLRWopsReadCallback))]
 			private static IntPtr read(
 				IntPtr context,
 				IntPtr ptr,
@@ -1937,7 +2145,7 @@ namespace Microsoft.Xna.Framework
 				return (IntPtr) len;
 			}
 
-			[ObjCRuntime.MonoPInvokeCallback(typeof(WriteFunc))]
+			[ObjCRuntime.MonoPInvokeCallback(typeof(SDL.SDLRWopsWriteCallback))]
 			private static IntPtr write(
 				IntPtr context,
 				IntPtr ptr,
@@ -1962,14 +2170,14 @@ namespace Microsoft.Xna.Framework
 				return (IntPtr) len;
 			}
 
-			[ObjCRuntime.MonoPInvokeCallback(typeof(CloseFunc))]
+			[ObjCRuntime.MonoPInvokeCallback(typeof(SDL.SDLRWopsCloseCallback))]
 			public static int close(IntPtr context)
 			{
 				lock (streamMap)
 				{
 					streamMap.Remove(context);
 				}
-				SDL_FreeRW(context);
+				SDL.SDL_FreeRW(context);
 				return 0;
 			}
 		}
@@ -2220,21 +2428,31 @@ namespace Microsoft.Xna.Framework
 			{
 				gc_buttonState |= Buttons.RightShoulder;
 			}
+
+			// DPad
+			ButtonState dpadUp = ButtonState.Released;
+			ButtonState dpadDown = ButtonState.Released;
+			ButtonState dpadLeft = ButtonState.Released;
+			ButtonState dpadRight = ButtonState.Released;
 			if (SDL.SDL_GameControllerGetButton(device, SDL.SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_DPAD_UP) != 0)
 			{
 				gc_buttonState |= Buttons.DPadUp;
+				dpadUp = ButtonState.Pressed;
 			}
 			if (SDL.SDL_GameControllerGetButton(device, SDL.SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_DPAD_DOWN) != 0)
 			{
 				gc_buttonState |= Buttons.DPadDown;
+				dpadDown = ButtonState.Pressed;
 			}
 			if (SDL.SDL_GameControllerGetButton(device, SDL.SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_DPAD_LEFT) != 0)
 			{
 				gc_buttonState |= Buttons.DPadLeft;
+				dpadLeft = ButtonState.Pressed;
 			}
 			if (SDL.SDL_GameControllerGetButton(device, SDL.SDL_GameControllerButton.SDL_CONTROLLER_BUTTON_DPAD_RIGHT) != 0)
 			{
 				gc_buttonState |= Buttons.DPadRight;
+				dpadRight = ButtonState.Pressed;
 			}
 
 			// Build the GamePadState, increment PacketNumber if state changed.
@@ -2242,7 +2460,7 @@ namespace Microsoft.Xna.Framework
 				new GamePadThumbSticks(stickLeft, stickRight, deadZoneMode),
 				new GamePadTriggers(triggerLeft, triggerRight, deadZoneMode),
 				new GamePadButtons(gc_buttonState),
-				new GamePadDPad(gc_buttonState)
+				new GamePadDPad(dpadUp, dpadDown, dpadLeft, dpadRight)
 			);
 			gc_builtState.IsConnected = true;
 			gc_builtState.PacketNumber = INTERNAL_states[index].PacketNumber;
@@ -2559,19 +2777,18 @@ namespace Microsoft.Xna.Framework
 
 		public static TouchPanelCapabilities GetTouchCapabilities()
 		{
+			/* Take these reported capabilities with a grain of salt.
+			 * On Windows, touch devices won't be detected until they
+			 * are interacted with. Also, MaximumTouchCount is completely
+			 * bogus. For any touch device, XNA always reports 4.
+			 *
+			 * -caleb
+			 */
 			bool touchDeviceExists = SDL.SDL_GetNumTouchDevices() > 0;
-			return new TouchPanelCapabilities
-			{
-				/* Take these reported capabilities with a grain of salt.
-				 * On Windows, touch devices won't be detected until they
-				 * are interacted with. Also, MaximumTouchCount is completely
-				 * bogus. For any touch device, XNA always reports 4.
-				 * 
-				 * -caleb
-				 */
-				IsConnected = touchDeviceExists,
-				MaximumTouchCount = touchDeviceExists ? 4 : 0
-			};
+			return new TouchPanelCapabilities(
+				touchDeviceExists,
+				touchDeviceExists ? 4 : 0
+			);
 		}
 
 		public static unsafe void UpdateTouchPanelState()

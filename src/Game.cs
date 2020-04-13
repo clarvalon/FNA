@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -54,7 +54,15 @@ namespace Microsoft.Xna.Framework
 			{
 				if (graphicsDeviceService == null)
 				{
-					return InitializeGraphicsService();
+					graphicsDeviceService = (IGraphicsDeviceService)
+						Services.GetService(typeof(IGraphicsDeviceService));
+
+					if (graphicsDeviceService == null)
+					{
+						throw new InvalidOperationException(
+							"No Graphics Device Service"
+						);
+					}
 				}
 				return graphicsDeviceService.GraphicsDevice;
 			}
@@ -192,6 +200,7 @@ namespace Microsoft.Xna.Framework
 		private List<IDrawable> currentlyDrawingComponents;
 
 		private IGraphicsDeviceService graphicsDeviceService;
+		private IGraphicsDeviceManager graphicsDeviceManager;
 		private bool hasInitialized;
 		private bool suppressDraw;
 		private bool isDisposed;
@@ -558,14 +567,18 @@ namespace Microsoft.Xna.Framework
 
 		protected virtual bool BeginDraw()
 		{
+			if (graphicsDeviceManager != null)
+			{
+				return graphicsDeviceManager.BeginDraw();
+			}
 			return true;
 		}
 
 		protected virtual void EndDraw()
 		{
-			if (GraphicsDevice != null)
+			if (graphicsDeviceManager != null)
 			{
-				GraphicsDevice.Present();
+				graphicsDeviceManager.EndDraw();
 			}
 		}
 
@@ -604,10 +617,15 @@ namespace Microsoft.Xna.Framework
 				Components[i].Initialize();
 			}
 
-			/* FIXME: If this test fails, is LoadContent ever called?
-			 * This seems like a condition that warrants an exception more
-			 * than a silent failure.
+			/* This seems like a condition that warrants a major
+			 * exception more than a silent failure, but for some
+			 * reason it's okay... but only sort of. You can get
+			 * away with initializing just before base.Initialize(),
+			 * but everything gets super broken on the IManager side
+			 * (IService doesn't seem to matter anywhere else).
 			 */
+			graphicsDeviceService = (IGraphicsDeviceService)
+				Services.GetService(typeof(IGraphicsDeviceService));
 			if (	graphicsDeviceService != null &&
 				graphicsDeviceService.GraphicsDevice != null	)
 			{
@@ -715,7 +733,18 @@ namespace Microsoft.Xna.Framework
 		{
 			AssertNotDisposed();
 
-			InitializeGraphicsService();
+			/* If this is late, you can still create it yourself.
+			 * In fact, you can even go as far as creating the
+			 * _manager_ before base.Initialize(), but Begin/EndDraw
+			 * will not get called. Just... please, make the service
+			 * before calling Run().
+			 */
+			graphicsDeviceManager = (IGraphicsDeviceManager)
+				Services.GetService(typeof(IGraphicsDeviceManager));
+			if (graphicsDeviceManager != null)
+			{
+				graphicsDeviceManager.CreateDevice();
+			}
 
 			Initialize();
 
@@ -782,22 +811,6 @@ namespace Microsoft.Xna.Framework
 				}
 			}
 			drawableComponents.Add(drawable);
-		}
-
-		private GraphicsDevice InitializeGraphicsService()
-		{
-			graphicsDeviceService = (IGraphicsDeviceService)
-				Services.GetService(typeof(IGraphicsDeviceService));
-
-			if (graphicsDeviceService == null)
-			{
-				throw new InvalidOperationException(
-					"No Graphics Device Service"
-				);
-			}
-
-			// This will call IGraphicsDeviceManager.CreateDevice
-			return graphicsDeviceService.GraphicsDevice;
 		}
 
 		#endregion

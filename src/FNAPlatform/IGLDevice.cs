@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -48,6 +48,11 @@ namespace Microsoft.Xna.Framework.Graphics
 			get;
 		}
 
+		bool SupportsNoOverwrite
+		{
+			get;
+		}
+
 		int MaxTextureSlots
 		{
 			get;
@@ -66,9 +71,9 @@ namespace Microsoft.Xna.Framework.Graphics
 		void Dispose();
 
 		void ResetBackbuffer(
-			PresentationParameters presentationParameters,
-			GraphicsAdapter adapter
+			PresentationParameters presentationParameters
 		);
+		void BeginFrame();
 		void SwapBuffers(
 			Rectangle? sourceRectangle,
 			Rectangle? destinationRectangle,
@@ -83,7 +88,8 @@ namespace Microsoft.Xna.Framework.Graphics
 			int numVertices,
 			int startIndex,
 			int primitiveCount,
-			IndexBuffer indices
+			IGLBuffer indices,
+			IndexElementSize indexElementSize
 		);
 		void DrawInstancedPrimitives(
 			PrimitiveType primitiveType,
@@ -93,7 +99,8 @@ namespace Microsoft.Xna.Framework.Graphics
 			int startIndex,
 			int primitiveCount,
 			int instanceCount,
-			IndexBuffer indices
+			IGLBuffer indices,
+			IndexElementSize indexElementSize
 		);
 		void DrawPrimitives(
 			PrimitiveType primitiveType,
@@ -159,7 +166,8 @@ namespace Microsoft.Xna.Framework.Graphics
 			SurfaceFormat format,
 			int width,
 			int height,
-			int levelCount
+			int levelCount,
+			bool isRenderTarget
 		);
 		IGLTexture CreateTexture3D(
 			SurfaceFormat format,
@@ -171,7 +179,8 @@ namespace Microsoft.Xna.Framework.Graphics
 		IGLTexture CreateTextureCube(
 			SurfaceFormat format,
 			int size,
-			int levelCount
+			int levelCount,
+			bool isRenderTarget
 		);
 		void AddDisposeTexture(IGLTexture texture);
 		void SetTextureData2D(
@@ -261,7 +270,8 @@ namespace Microsoft.Xna.Framework.Graphics
 			int width,
 			int height,
 			SurfaceFormat format,
-			int multiSampleCount
+			int multiSampleCount,
+			IGLTexture texture
 		);
 		IGLRenderbuffer GenRenderbuffer(
 			int width,
@@ -273,6 +283,7 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		IGLBuffer GenVertexBuffer(
 			bool dynamic,
+			BufferUsage usage,
 			int vertexCount,
 			int vertexStride
 		);
@@ -296,6 +307,7 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		IGLBuffer GenIndexBuffer(
 			bool dynamic,
+			BufferUsage usage,
 			int indexCount,
 			IndexElementSize indexElementSize
 		);
@@ -358,10 +370,6 @@ namespace Microsoft.Xna.Framework.Graphics
 
 	internal interface IGLBuffer
 	{
-		IntPtr BufferSize
-		{
-			get;
-		}
 	}
 
 	internal interface IGLEffect

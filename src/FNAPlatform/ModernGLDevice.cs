@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -114,7 +114,7 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		#region OpenGL Buffer Container Class
 
-		private class OpenGLBuffer : IGLBuffer
+		private class ModernGLBuffer : IGLBuffer
 		{
 			public uint Handle
 			{
@@ -128,27 +128,38 @@ namespace Microsoft.Xna.Framework.Graphics
 				private set;
 			}
 
-			public GLenum Dynamic
+			public GLenum Flags
 			{
 				get;
 				private set;
 			}
 
-			public OpenGLBuffer(
+			public IntPtr Pin;
+
+			public ModernGLBuffer(
 				uint handle,
 				IntPtr bufferSize,
-				GLenum dynamic
+				BufferUsage usage
 			) {
 				Handle = handle;
 				BufferSize = bufferSize;
-				Dynamic = dynamic;
+				Flags = (
+					GLenum.GL_MAP_PERSISTENT_BIT |
+					GLenum.GL_MAP_COHERENT_BIT |
+					GLenum.GL_MAP_WRITE_BIT
+				);
+				if (usage == BufferUsage.None)
+				{
+					Flags |= GLenum.GL_MAP_READ_BIT;
+				}
 			}
 
-			private OpenGLBuffer()
+			private ModernGLBuffer(uint handle)
 			{
-				Handle = 0;
+				Handle = handle;
 			}
-			public static readonly OpenGLBuffer NullBuffer = new OpenGLBuffer();
+			public static readonly ModernGLBuffer NullBuffer = new ModernGLBuffer(0);
+			public static readonly ModernGLBuffer ForceUpdate = new ModernGLBuffer(uint.MaxValue);
 		}
 
 		#endregion
@@ -391,7 +402,7 @@ namespace Microsoft.Xna.Framework.Graphics
 		private uint ldPass = 0;
 
 		// Some vertex declarations may have overlapping attributes :/
-		private bool[,] attrUse = new bool[(int) MojoShader.MOJOSHADER_usage.MOJOSHADER_USAGE_TOTAL, 10];
+		private bool[,] attrUse = new bool[(int) MojoShader.MOJOSHADER_usage.MOJOSHADER_USAGE_TOTAL, 16];
 
 		#endregion
 
@@ -459,6 +470,14 @@ namespace Microsoft.Xna.Framework.Graphics
 			private set;
 		}
 
+		public bool SupportsNoOverwrite
+		{
+			get
+			{
+				return true;
+			}
+		}
+
 		public int MaxTextureSlots
 		{
 			get;
@@ -477,14 +496,14 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		private class VertexAttribute
 		{
-			public uint CurrentBuffer;
+			public ModernGLBuffer CurrentBuffer;
 			public IntPtr CurrentPointer;
 			public VertexElementFormat CurrentFormat;
 			public bool CurrentNormalized;
 			public int CurrentStride;
 			public VertexAttribute()
 			{
-				CurrentBuffer = 0;
+				CurrentBuffer = ModernGLBuffer.NullBuffer;
 				CurrentPointer = IntPtr.Zero;
 				CurrentFormat = VertexElementFormat.Single;
 				CurrentNormalized = false;
@@ -539,33 +558,10 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		#endregion
 
-		#region memcpy Export
-
-		/* This is used a lot for GetData/Read calls... -flibit */
-#if NETSTANDARD2_0
-		private static unsafe void memcpy(IntPtr dst, IntPtr src, IntPtr len)
-		{
-			long size = len.ToInt64();
-			Buffer.MemoryCopy(
-				(void*) src,
-				(void*) dst,
-				size,
-				size
-			);
-		}
-#else
-		[DllImport("msvcrt", CallingConvention = CallingConvention.Cdecl)]
-		private static extern void memcpy(IntPtr dst, IntPtr src, IntPtr len);
-#endif
-
-		#endregion
-
 		#region Public Constructor
 
-		public ModernGLDevice(
-			PresentationParameters presentationParameters,
-			GraphicsAdapter adapter
-		) {
+		public ModernGLDevice(PresentationParameters presentationParameters)
+		{
 			// Create OpenGL context
 			glContext = SDL.SDL_GL_CreateContext(
 				presentationParameters.DeviceWindowHandle
@@ -597,9 +593,24 @@ namespace Microsoft.Xna.Framework.Graphics
 			{
 				windowDepthFormat = DepthFormat.Depth24Stencil8;
 			}
+			else if (depthSize == 32 && stencilSize == 8)
+			{
+				/* There's like a 99% chance this is GDI,
+				 * expect a NoSuitableGraphicsDevice soon after
+				 * this line...
+				 */
+				FNALoggerEXT.LogWarn(
+					"Non-standard D32S8 window depth format!"
+				);
+				windowDepthFormat = DepthFormat.Depth24Stencil8;
+			}
 			else
 			{
-				throw new NotSupportedException("Unrecognized window depth/stencil format!");
+				throw new NotSupportedException(string.Format(
+					"Unrecognized window depth/stencil format: {0} {1}",
+					depthSize,
+					stencilSize
+				));
 			}
 
 			// Init threaded GL crap where applicable
@@ -622,6 +633,12 @@ namespace Microsoft.Xna.Framework.Graphics
 					null,
 					IntPtr.Zero
 				);
+
+				/* SPIR-V is very new and not really necessary. */
+				if (shaderProfile == "glspirv" && !useCoreProfile)
+				{
+					shaderProfile = "glsl120";
+				}
 			}
 			shaderContext = MojoShader.MOJOSHADER_glCreateContext(
 				shaderProfile,
@@ -635,7 +652,7 @@ namespace Microsoft.Xna.Framework.Graphics
 
 			// Some users might want pixely upscaling...
 			backbufferScaleMode = Environment.GetEnvironmentVariable(
-				"FNA_OPENGL_BACKBUFFER_SCALE_NEAREST"
+				"FNA_GRAPHICS_BACKBUFFER_SCALE_NEAREST"
 			) == "1" ? GLenum.GL_NEAREST : GLenum.GL_LINEAR;
 
 			// Print GL information
@@ -683,7 +700,7 @@ namespace Microsoft.Xna.Framework.Graphics
 			);
 
 			// Initialize the faux-backbuffer
-			if (UseFauxBackbuffer(presentationParameters, adapter.CurrentDisplayMode))
+			if (UseFauxBackbuffer(presentationParameters))
 			{
 				Backbuffer = new OpenGLBackbuffer(
 					this,
@@ -794,6 +811,7 @@ namespace Microsoft.Xna.Framework.Graphics
 			else
 			{
 				// Compat-only, but needed for PSIZE0 accuracy
+				glEnable(GLenum.GL_POINT_SPRITE);
 				glTexEnvi(GLenum.GL_POINT_SPRITE, GLenum.GL_COORD_REPLACE, 1);
 			}
 		}
@@ -834,11 +852,9 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		#region Window Backbuffer Reset Method
 
-		public void ResetBackbuffer(
-			PresentationParameters presentationParameters,
-			GraphicsAdapter adapter
-		) {
-			if (UseFauxBackbuffer(presentationParameters, adapter.CurrentDisplayMode))
+		public void ResetBackbuffer(PresentationParameters presentationParameters)
+		{
+			if (UseFauxBackbuffer(presentationParameters))
 			{
 				if (Backbuffer is NullBackbuffer)
 				{
@@ -875,6 +891,15 @@ namespace Microsoft.Xna.Framework.Graphics
 					);
 				}
 			}
+		}
+
+		#endregion
+
+		#region BeginFrame Method
+
+		public void BeginFrame()
+		{
+			// Do nothing.
 		}
 
 		#endregion
@@ -1145,10 +1170,11 @@ namespace Microsoft.Xna.Framework.Graphics
 			int numVertices,
 			int startIndex,
 			int primitiveCount,
-			IndexBuffer indices
+			IGLBuffer indices,
+			IndexElementSize indexElementSize
 		) {
 			// Bind the index buffer
-			BindIndexBuffer(indices.buffer);
+			BindIndexBuffer(indices);
 
 			// Draw!
 			glDrawRangeElementsBaseVertex(
@@ -1156,8 +1182,8 @@ namespace Microsoft.Xna.Framework.Graphics
 				minVertexIndex,
 				minVertexIndex + numVertices - 1,
 				XNAToGL.PrimitiveVerts(primitiveType, primitiveCount),
-				XNAToGL.IndexType[(int) indices.IndexElementSize],
-				(IntPtr) (startIndex * XNAToGL.IndexSize[(int) indices.IndexElementSize]),
+				XNAToGL.IndexType[(int) indexElementSize],
+				(IntPtr) (startIndex * XNAToGL.IndexSize[(int) indexElementSize]),
 				baseVertex
 			);
 		}
@@ -1170,19 +1196,20 @@ namespace Microsoft.Xna.Framework.Graphics
 			int startIndex,
 			int primitiveCount,
 			int instanceCount,
-			IndexBuffer indices
+			IGLBuffer indices,
+			IndexElementSize indexElementSize
 		) {
 			// Note that minVertexIndex and numVertices are NOT used!
 
 			// Bind the index buffer
-			BindIndexBuffer(indices.buffer);
+			BindIndexBuffer(indices);
 
 			// Draw!
 			glDrawElementsInstancedBaseVertex(
 				XNAToGL.Primitive[(int) primitiveType],
 				XNAToGL.PrimitiveVerts(primitiveType, primitiveCount),
-				XNAToGL.IndexType[(int) indices.IndexElementSize],
-				(IntPtr) (startIndex * XNAToGL.IndexSize[(int) indices.IndexElementSize]),
+				XNAToGL.IndexType[(int) indexElementSize],
+				(IntPtr) (startIndex * XNAToGL.IndexSize[(int) indexElementSize]),
 				instanceCount,
 				baseVertex
 			);
@@ -1212,7 +1239,7 @@ namespace Microsoft.Xna.Framework.Graphics
 			int primitiveCount
 		) {
 			// Unbind current index buffer.
-			BindIndexBuffer(OpenGLBuffer.NullBuffer);
+			BindIndexBuffer(ModernGLBuffer.NullBuffer);
 
 			// Draw!
 			glDrawRangeElements(
@@ -1985,7 +2012,7 @@ namespace Microsoft.Xna.Framework.Graphics
 						if (attrUse[usage, index])
 						{
 							index = -1;
-							for (int j = 0; j < 10; j += 1)
+							for (int j = 0; j < 16; j += 1)
 							{
 								if (!attrUse[usage, j])
 								{
@@ -2010,7 +2037,7 @@ namespace Microsoft.Xna.Framework.Graphics
 						}
 						attributeEnabled[attribLoc] = true;
 						VertexAttribute attr = attributes[attribLoc];
-						uint buffer = (bindings[i].VertexBuffer.buffer as OpenGLBuffer).Handle;
+						ModernGLBuffer buffer = bindings[i].VertexBuffer.buffer as ModernGLBuffer;
 						IntPtr ptr = basePtr + element.Offset;
 						VertexElementFormat format = element.VertexElementFormat;
 						bool normalized = XNAToGL.VertexAttribNormalized(element);
@@ -2063,7 +2090,7 @@ namespace Microsoft.Xna.Framework.Graphics
 			IntPtr ptr,
 			int vertexOffset
 		) {
-			BindVertexBuffer(OpenGLBuffer.NullBuffer);
+			BindVertexBuffer(ModernGLBuffer.NullBuffer);
 			IntPtr basePtr = ptr + (vertexDeclaration.VertexStride * vertexOffset);
 
 			if (	vertexDeclaration != ldVertexDeclaration ||
@@ -2088,7 +2115,7 @@ namespace Microsoft.Xna.Framework.Graphics
 					if (attrUse[usage, index])
 					{
 						index = -1;
-						for (int j = 0; j < 10; j += 1)
+						for (int j = 0; j < 16; j += 1)
 						{
 							if (!attrUse[usage, j])
 							{
@@ -2115,7 +2142,7 @@ namespace Microsoft.Xna.Framework.Graphics
 					VertexAttribute attr = attributes[attribLoc];
 					IntPtr finalPtr = basePtr + element.Offset;
 					bool normalized = XNAToGL.VertexAttribNormalized(element);
-					if (	attr.CurrentBuffer != 0 ||
+					if (	attr.CurrentBuffer != ModernGLBuffer.NullBuffer ||
 						attr.CurrentPointer != finalPtr ||
 						attr.CurrentFormat != element.VertexElementFormat ||
 						attr.CurrentNormalized != normalized ||
@@ -2129,7 +2156,7 @@ namespace Microsoft.Xna.Framework.Graphics
 							vertexDeclaration.VertexStride,
 							finalPtr
 						);
-						attr.CurrentBuffer = 0;
+						attr.CurrentBuffer = ModernGLBuffer.NullBuffer;
 						attr.CurrentPointer = finalPtr;
 						attr.CurrentFormat = element.VertexElementFormat;
 						attr.CurrentNormalized = normalized;
@@ -2189,10 +2216,11 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		public IGLBuffer GenVertexBuffer(
 			bool dynamic,
+			BufferUsage usage,
 			int vertexCount,
 			int vertexStride
 		) {
-			OpenGLBuffer result = null;
+			ModernGLBuffer result = null;
 
 #if !DISABLE_THREADING
 			ForceToMainThread(() => {
@@ -2201,19 +2229,37 @@ namespace Microsoft.Xna.Framework.Graphics
 			uint handle;
 			glCreateBuffers(1, out handle);
 
-			result = new OpenGLBuffer(
+			result = new ModernGLBuffer(
 				handle,
 				(IntPtr) (vertexStride * vertexCount),
-				dynamic ? GLenum.GL_STREAM_DRAW : GLenum.GL_STATIC_DRAW
+				usage
 			);
 
-			glNamedBufferData(
-				handle,
-				result.BufferSize,
-				IntPtr.Zero,
-				result.Dynamic
-			);
+			if (dynamic)
+			{
+				glNamedBufferStorage(
+					handle,
+					result.BufferSize,
+					IntPtr.Zero,
+					result.Flags | GLenum.GL_DYNAMIC_STORAGE_BIT
+				);
 
+				result.Pin = glMapNamedBufferRange(
+					handle,
+					IntPtr.Zero,
+					result.BufferSize,
+					result.Flags
+				);
+			}
+			else
+			{
+				glNamedBufferData(
+					handle,
+					result.BufferSize,
+					IntPtr.Zero,
+					GLenum.GL_STATIC_DRAW
+				);
+			}
 #if !DISABLE_THREADING
 			});
 #endif
@@ -2223,10 +2269,11 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		public IGLBuffer GenIndexBuffer(
 			bool dynamic,
+			BufferUsage usage,
 			int indexCount,
 			IndexElementSize indexElementSize
 		) {
-			OpenGLBuffer result = null;
+			ModernGLBuffer result = null;
 
 #if !DISABLE_THREADING
 			ForceToMainThread(() => {
@@ -2235,19 +2282,37 @@ namespace Microsoft.Xna.Framework.Graphics
 			uint handle;
 			glCreateBuffers(1, out handle);
 
-			result = new OpenGLBuffer(
+			result = new ModernGLBuffer(
 				handle,
 				(IntPtr) (indexCount * XNAToGL.IndexSize[(int) indexElementSize]),
-				dynamic ? GLenum.GL_STREAM_DRAW : GLenum.GL_STATIC_DRAW
+				usage
 			);
 
-			glNamedBufferData(
-				handle,
-				result.BufferSize,
-				IntPtr.Zero,
-				result.Dynamic
-			);
+			if (dynamic)
+			{
+				glNamedBufferStorage(
+					handle,
+					result.BufferSize,
+					IntPtr.Zero,
+					result.Flags | GLenum.GL_DYNAMIC_STORAGE_BIT
+				);
 
+				result.Pin = glMapNamedBufferRange(
+					handle,
+					IntPtr.Zero,
+					result.BufferSize,
+					result.Flags
+				);
+			}
+			else
+			{
+				glNamedBufferData(
+					handle,
+					result.BufferSize,
+					IntPtr.Zero,
+					GLenum.GL_STATIC_DRAW
+				);
+			}
 #if !DISABLE_THREADING
 			});
 #endif
@@ -2261,7 +2326,7 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		private void BindVertexBuffer(IGLBuffer buffer)
 		{
-			uint handle = (buffer as OpenGLBuffer).Handle;
+			uint handle = (buffer as ModernGLBuffer).Handle;
 			if (handle != currentVertexBuffer)
 			{
 				glBindBuffer(GLenum.GL_ARRAY_BUFFER, handle);
@@ -2271,7 +2336,7 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		private void BindIndexBuffer(IGLBuffer buffer)
 		{
-			uint handle = (buffer as OpenGLBuffer).Handle;
+			uint handle = (buffer as ModernGLBuffer).Handle;
 			if (handle != currentIndexBuffer)
 			{
 				glBindBuffer(GLenum.GL_ELEMENT_ARRAY_BUFFER, handle);
@@ -2290,31 +2355,54 @@ namespace Microsoft.Xna.Framework.Graphics
 			int dataLength,
 			SetDataOptions options
 		) {
+			ModernGLBuffer buf = buffer as ModernGLBuffer;
+
+			if (options == SetDataOptions.None)
+			{
 #if !DISABLE_THREADING
-			ForceToMainThread(() => {
+				ForceToMainThread(() => {
 #endif
-			uint handle = (buffer as OpenGLBuffer).Handle;
+				/* For static buffers this is the only path,
+				 * and it should be "fast" enough over there.
+				 * If you are hitting this with a dynamic buffer
+				 * you are using dynamic buffers incorrectly.
+				 * -flibit
+				 */
+				glNamedBufferSubData(
+					buf.Handle,
+					(IntPtr) offsetInBytes,
+					(IntPtr) dataLength,
+					data
+				);
+#if !DISABLE_THREADING
+				});
+#endif
+				return;
+			}
 
 			if (options == SetDataOptions.Discard)
 			{
-				glNamedBufferData(
-					handle,
-					buffer.BufferSize,
+#if !DISABLE_THREADING
+				ForceToMainThread(() => {
+#endif
+				glUnmapNamedBuffer(buf.Handle);
+				glInvalidateBufferData(buf.Handle);
+				buf.Pin = glMapNamedBufferRange(
+					buf.Handle,
 					IntPtr.Zero,
-					(buffer as OpenGLBuffer).Dynamic
+					buf.BufferSize,
+					buf.Flags
 				);
+#if !DISABLE_THREADING
+				});
+#endif
 			}
 
-			glNamedBufferSubData(
-				handle,
-				(IntPtr) offsetInBytes,
-				(IntPtr) dataLength,
-				data
+			SDL.SDL_memcpy(
+				buf.Pin + offsetInBytes,
+				data,
+				(IntPtr) dataLength
 			);
-
-#if !DISABLE_THREADING
-			});
-#endif
 		}
 
 		public void SetIndexBufferData(
@@ -2324,32 +2412,54 @@ namespace Microsoft.Xna.Framework.Graphics
 			int dataLength,
 			SetDataOptions options
 		) {
-#if !DISABLE_THREADING
-			ForceToMainThread(() => {
-#endif
+			ModernGLBuffer buf = buffer as ModernGLBuffer;
 
-			uint handle = (buffer as OpenGLBuffer).Handle;
+			if (options == SetDataOptions.None)
+			{
+#if !DISABLE_THREADING
+				ForceToMainThread(() => {
+#endif
+				/* For static buffers this is the only path,
+				 * and it should be "fast" enough over there.
+				 * If you are hitting this with a dynamic buffer
+				 * you are using dynamic buffers incorrectly.
+				 * -flibit
+				 */
+				glNamedBufferSubData(
+					buf.Handle,
+					(IntPtr) offsetInBytes,
+					(IntPtr) dataLength,
+					data
+				);
+#if !DISABLE_THREADING
+				});
+#endif
+				return;
+			}
 
 			if (options == SetDataOptions.Discard)
 			{
-				glNamedBufferData(
-					handle,
-					buffer.BufferSize,
+#if !DISABLE_THREADING
+				ForceToMainThread(() => {
+#endif
+				glUnmapNamedBuffer(buf.Handle);
+				glInvalidateBufferData(buf.Handle);
+				buf.Pin = glMapNamedBufferRange(
+					buf.Handle,
 					IntPtr.Zero,
-					(buffer as OpenGLBuffer).Dynamic
+					buf.BufferSize,
+					buf.Flags
 				);
+#if !DISABLE_THREADING
+				});
+#endif
 			}
 
-			glNamedBufferSubData(
-				handle,
-				(IntPtr) offsetInBytes,
-				(IntPtr) dataLength,
-				data
+			SDL.SDL_memcpy(
+				buf.Pin + offsetInBytes,
+				data,
+				(IntPtr) dataLength
 			);
-
-#if !DISABLE_THREADING
-			});
-#endif
 		}
 
 		#endregion
@@ -2376,20 +2486,33 @@ namespace Microsoft.Xna.Framework.Graphics
 				cpy = data + (startIndex * elementSizeInBytes);
 			}
 
+			ModernGLBuffer buf = buffer as ModernGLBuffer;
+			if (buf.Pin != IntPtr.Zero)
+			{
+				/* Buffers can't get written to by anyone other than the
+				 * application, so we can just memcpy here... right?
+				 */
+				SDL.SDL_memcpy(
+					cpy,
+					buf.Pin + offsetInBytes,
+					(IntPtr) (elementCount * elementSizeInBytes)
+				);
+			}
+			else
+			{
 #if !DISABLE_THREADING
-			ForceToMainThread(() => {
+				ForceToMainThread(() => {
 #endif
-				
-			glGetNamedBufferSubData(
-				(buffer as OpenGLBuffer).Handle,
-				(IntPtr) offsetInBytes,
-				(IntPtr) (elementCount * vertexStride),
-				cpy
-			);
-
+				glGetNamedBufferSubData(
+					buf.Handle,
+					(IntPtr) offsetInBytes,
+					(IntPtr) (elementCount * vertexStride),
+					cpy
+				);
 #if !DISABLE_THREADING
-			});
+				});
 #endif
+			}
 
 			if (useStagingBuffer)
 			{
@@ -2397,7 +2520,7 @@ namespace Microsoft.Xna.Framework.Graphics
 				IntPtr dst = data + (startIndex * elementSizeInBytes);
 				for (int i = 0; i < elementCount; i += 1)
 				{
-					memcpy(dst, src, (IntPtr) elementSizeInBytes);
+					SDL.SDL_memcpy(dst, src, (IntPtr) elementSizeInBytes);
 					dst += elementSizeInBytes;
 					src += vertexStride;
 				}
@@ -2413,20 +2536,33 @@ namespace Microsoft.Xna.Framework.Graphics
 			int elementCount,
 			int elementSizeInBytes
 		) {
+			ModernGLBuffer buf = buffer as ModernGLBuffer;
+			if (buf.Pin != IntPtr.Zero)
+			{
+				/* Buffers can't get written to by anyone other than the
+				 * application, so we can just memcpy here... right?
+				 */
+				SDL.SDL_memcpy(
+					data + (startIndex * elementSizeInBytes),
+					(buffer as ModernGLBuffer).Pin + offsetInBytes,
+					(IntPtr) (elementCount * elementSizeInBytes)
+				);
+			}
+			else
+			{
 #if !DISABLE_THREADING
-			ForceToMainThread(() => {
+				ForceToMainThread(() => {
 #endif
-
-			glGetNamedBufferSubData(
-				(buffer as OpenGLBuffer).Handle,
-				(IntPtr) offsetInBytes,
-				(IntPtr) (elementCount * elementSizeInBytes),
-				data + (startIndex * elementSizeInBytes)
-			);
-
+				glGetNamedBufferSubData(
+					buf.Handle,
+					(IntPtr) offsetInBytes,
+					(IntPtr) (elementCount * elementSizeInBytes),
+					data + (startIndex * elementSizeInBytes)
+				);
 #if !DISABLE_THREADING
-			});
+				});
 #endif
+			}
 		}
 
 		#endregion
@@ -2435,7 +2571,8 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		private void DeleteVertexBuffer(IGLBuffer buffer)
 		{
-			uint handle = (buffer as OpenGLBuffer).Handle;
+			ModernGLBuffer buf = buffer as ModernGLBuffer;
+			uint handle = buf.Handle;
 			if (handle == currentVertexBuffer)
 			{
 				glBindBuffer(GLenum.GL_ARRAY_BUFFER, 0);
@@ -2443,10 +2580,10 @@ namespace Microsoft.Xna.Framework.Graphics
 			}
 			for (int i = 0; i < attributes.Length; i += 1)
 			{
-				if (handle == attributes[i].CurrentBuffer)
+				if (buf == attributes[i].CurrentBuffer)
 				{
 					// Force the next vertex attrib update!
-					attributes[i].CurrentBuffer = uint.MaxValue;
+					attributes[i].CurrentBuffer = ModernGLBuffer.ForceUpdate;
 				}
 			}
 			glDeleteBuffers(1, ref handle);
@@ -2454,7 +2591,7 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		private void DeleteIndexBuffer(IGLBuffer buffer)
 		{
-			uint handle = (buffer as OpenGLBuffer).Handle;
+			uint handle = (buffer as ModernGLBuffer).Handle;
 			if (handle == currentIndexBuffer)
 			{
 				glBindBuffer(GLenum.GL_ELEMENT_ARRAY_BUFFER, 0);
@@ -2485,7 +2622,8 @@ namespace Microsoft.Xna.Framework.Graphics
 			SurfaceFormat format,
 			int width,
 			int height,
-			int levelCount
+			int levelCount,
+			bool isRenderTarget
 		) {
 			OpenGLTexture result = null;
 
@@ -2505,6 +2643,31 @@ namespace Microsoft.Xna.Framework.Graphics
 				width,
 				height
 			);
+
+			if (format == SurfaceFormat.Alpha8)
+			{
+				// Alpha8 needs a swizzle, since GL_ALPHA is unsupported
+				glTextureParameteri(
+					result.Handle,
+					GLenum.GL_TEXTURE_SWIZZLE_R,
+					GLenum.GL_ZERO
+				);
+				glTextureParameteri(
+					result.Handle,
+					GLenum.GL_TEXTURE_SWIZZLE_G,
+					GLenum.GL_ZERO
+				);
+				glTextureParameteri(
+					result.Handle,
+					GLenum.GL_TEXTURE_SWIZZLE_B,
+					GLenum.GL_ZERO
+				);
+				glTextureParameteri(
+					result.Handle,
+					GLenum.GL_TEXTURE_SWIZZLE_A,
+					GLenum.GL_RED
+				);
+			}
 
 #if !DISABLE_THREADING
 			});
@@ -2540,6 +2703,31 @@ namespace Microsoft.Xna.Framework.Graphics
 				depth
 			);
 
+			if (format == SurfaceFormat.Alpha8)
+			{
+				// Alpha8 needs a swizzle, since GL_ALPHA is unsupported
+				glTextureParameteri(
+					result.Handle,
+					GLenum.GL_TEXTURE_SWIZZLE_R,
+					GLenum.GL_ZERO
+				);
+				glTextureParameteri(
+					result.Handle,
+					GLenum.GL_TEXTURE_SWIZZLE_G,
+					GLenum.GL_ZERO
+				);
+				glTextureParameteri(
+					result.Handle,
+					GLenum.GL_TEXTURE_SWIZZLE_B,
+					GLenum.GL_ZERO
+				);
+				glTextureParameteri(
+					result.Handle,
+					GLenum.GL_TEXTURE_SWIZZLE_A,
+					GLenum.GL_RED
+				);
+			}
+
 #if !DISABLE_THREADING
 			});
 #endif
@@ -2550,7 +2738,8 @@ namespace Microsoft.Xna.Framework.Graphics
 		public IGLTexture CreateTextureCube(
 			SurfaceFormat format,
 			int size,
-			int levelCount
+			int levelCount,
+			bool isRenderTarget
 		) {
 			OpenGLTexture result = null;
 
@@ -2570,6 +2759,31 @@ namespace Microsoft.Xna.Framework.Graphics
 				size,
 				size
 			);
+
+			if (format == SurfaceFormat.Alpha8)
+			{
+				// Alpha8 needs a swizzle, since GL_ALPHA is unsupported
+				glTextureParameteri(
+					result.Handle,
+					GLenum.GL_TEXTURE_SWIZZLE_R,
+					GLenum.GL_ZERO
+				);
+				glTextureParameteri(
+					result.Handle,
+					GLenum.GL_TEXTURE_SWIZZLE_G,
+					GLenum.GL_ZERO
+				);
+				glTextureParameteri(
+					result.Handle,
+					GLenum.GL_TEXTURE_SWIZZLE_B,
+					GLenum.GL_ZERO
+				);
+				glTextureParameteri(
+					result.Handle,
+					GLenum.GL_TEXTURE_SWIZZLE_A,
+					GLenum.GL_RED
+				);
+			}
 
 #if !DISABLE_THREADING
 			});
@@ -2764,7 +2978,7 @@ namespace Microsoft.Xna.Framework.Graphics
 					0,
 					tex.Width,
 					tex.Height,
-					GLenum.GL_LUMINANCE,
+					GLenum.GL_RED,
 					GLenum.GL_UNSIGNED_BYTE,
 					ptr
 				);
@@ -3020,9 +3234,9 @@ namespace Microsoft.Xna.Framework.Graphics
 			for (int row = 0; row < subH / 2; row += 1)
 			{
 				// Top to temp, bottom to top, temp to bottom
-				memcpy(temp, data + (row * pitch), (IntPtr) pitch);
-				memcpy(data + (row * pitch), data + ((subH - row - 1) * pitch), (IntPtr) pitch);
-				memcpy(data + ((subH - row - 1) * pitch), temp, (IntPtr) pitch);
+				SDL.SDL_memcpy(temp, data + (row * pitch), (IntPtr) pitch);
+				SDL.SDL_memcpy(data + (row * pitch), data + ((subH - row - 1) * pitch), (IntPtr) pitch);
+				SDL.SDL_memcpy(data + ((subH - row - 1) * pitch), temp, (IntPtr) pitch);
 			}
 			Marshal.FreeHGlobal(temp);
 		}
@@ -3216,7 +3430,8 @@ namespace Microsoft.Xna.Framework.Graphics
 			int width,
 			int height,
 			SurfaceFormat format,
-			int multiSampleCount
+			int multiSampleCount,
+			IGLTexture texture
 		) {
 			uint handle = 0;
 
@@ -3414,8 +3629,8 @@ namespace Microsoft.Xna.Framework.Graphics
 				// FIXME: ColorWriteChannels1/2/3? -flibit
 				glColorMask(
 					(colorWriteEnable & ColorWriteChannels.Red) != 0,
-					(colorWriteEnable & ColorWriteChannels.Blue) != 0,
 					(colorWriteEnable & ColorWriteChannels.Green) != 0,
+					(colorWriteEnable & ColorWriteChannels.Blue) != 0,
 					(colorWriteEnable & ColorWriteChannels.Alpha) != 0
 				);
 			}
@@ -3498,13 +3713,25 @@ namespace Microsoft.Xna.Framework.Graphics
 						else if (	attachmentTypes[i] == GLenum.GL_RENDERBUFFER &&
 								currentAttachmentTypes[i] != GLenum.GL_RENDERBUFFER	)
 						{
-							// FIXME: Do we use layer for unbinding cubes? -flibit
-							glNamedFramebufferTexture(
-								targetFramebuffer,
-								GLenum.GL_COLOR_ATTACHMENT0 + i,
-								0,
-								0
-							);
+							if (currentAttachmentTypes[i] == GLenum.GL_TEXTURE_2D)
+							{
+								glNamedFramebufferTexture(
+									targetFramebuffer,
+									GLenum.GL_COLOR_ATTACHMENT0 + i,
+									0,
+									0
+								);
+							}
+							else
+							{
+								glNamedFramebufferTextureLayer(
+									targetFramebuffer,
+									GLenum.GL_COLOR_ATTACHMENT0 + i,
+									0,
+									0,
+									(int) currentAttachmentTypes[i] - (int) GLenum.GL_TEXTURE_CUBE_MAP_POSITIVE_X
+								);
+							}
 						}
 					}
 					if (attachmentTypes[i] == GLenum.GL_RENDERBUFFER)
@@ -3516,13 +3743,23 @@ namespace Microsoft.Xna.Framework.Graphics
 							attachments[i]
 						);
 					}
-					else
+					else if (attachmentTypes[i] == GLenum.GL_TEXTURE_2D)
 					{
 						glNamedFramebufferTexture(
 							targetFramebuffer,
 							GLenum.GL_COLOR_ATTACHMENT0 + i,
 							attachments[i],
 							0
+						);
+					}
+					else
+					{
+						glNamedFramebufferTextureLayer(
+							targetFramebuffer,
+							GLenum.GL_COLOR_ATTACHMENT0 + i,
+							attachments[i],
+							0,
+							(int) attachmentTypes[i] - (int) GLenum.GL_TEXTURE_CUBE_MAP_POSITIVE_X
 						);
 					}
 					currentAttachments[i] = attachments[i];
@@ -3554,14 +3791,23 @@ namespace Microsoft.Xna.Framework.Graphics
 							0
 						);
 					}
-					else
+					else if (currentAttachmentTypes[i] == GLenum.GL_TEXTURE_2D)
 					{
-						// FIXME: Do we use layer for unbinding cubes? -flibit
 						glNamedFramebufferTexture(
 							targetFramebuffer,
 							GLenum.GL_COLOR_ATTACHMENT0 + i,
 							0,
 							0
+						);
+					}
+					else
+					{
+						glNamedFramebufferTextureLayer(
+							targetFramebuffer,
+							GLenum.GL_COLOR_ATTACHMENT0 + i,
+							0,
+							0,
+							(int) currentAttachmentTypes[i] - (int) GLenum.GL_TEXTURE_CUBE_MAP_POSITIVE_X
 						);
 					}
 					currentAttachments[i] = 0;
@@ -3704,7 +3950,7 @@ namespace Microsoft.Xna.Framework.Graphics
 				GLenum.GL_RGBA,				// SurfaceFormat.Rgba1010102
 				GLenum.GL_RG,				// SurfaceFormat.Rg32
 				GLenum.GL_RGBA,				// SurfaceFormat.Rgba64
-				GLenum.GL_LUMINANCE,			// SurfaceFormat.Alpha8
+				GLenum.GL_RED,				// SurfaceFormat.Alpha8
 				GLenum.GL_RED,				// SurfaceFormat.Single
 				GLenum.GL_RG,				// SurfaceFormat.Vector2
 				GLenum.GL_RGBA,				// SurfaceFormat.Vector4
@@ -3729,7 +3975,7 @@ namespace Microsoft.Xna.Framework.Graphics
 				GLenum.GL_RGB10_A2_EXT,				// SurfaceFormat.Rgba1010102
 				GLenum.GL_RG16,					// SurfaceFormat.Rg32
 				GLenum.GL_RGBA16,				// SurfaceFormat.Rgba64
-				GLenum.GL_LUMINANCE8,				// SurfaceFormat.Alpha8
+				GLenum.GL_R8,					// SurfaceFormat.Alpha8
 				GLenum.GL_R32F,					// SurfaceFormat.Single
 				GLenum.GL_RG32F,				// SurfaceFormat.Vector2
 				GLenum.GL_RGBA32F,				// SurfaceFormat.Vector4
@@ -3917,18 +4163,18 @@ namespace Microsoft.Xna.Framework.Graphics
 
 			public static readonly int[] VertexAttribSize = new int[]
 			{
-					1,	// VertexElementFormat.Single
-					2,	// VertexElementFormat.Vector2
-					3,	// VertexElementFormat.Vector3
-					4,	// VertexElementFormat.Vector4
-					4,	// VertexElementFormat.Color
-					4,	// VertexElementFormat.Byte4
-					2,	// VertexElementFormat.Short2
-					4,	// VertexElementFormat.Short4
-					2,	// VertexElementFormat.NormalizedShort2
-					4,	// VertexElementFormat.NormalizedShort4
-					2,	// VertexElementFormat.HalfVector2
-					4	// VertexElementFormat.HalfVector4
+				1,	// VertexElementFormat.Single
+				2,	// VertexElementFormat.Vector2
+				3,	// VertexElementFormat.Vector3
+				4,	// VertexElementFormat.Vector4
+				4,	// VertexElementFormat.Color
+				4,	// VertexElementFormat.Byte4
+				2,	// VertexElementFormat.Short2
+				4,	// VertexElementFormat.Short4
+				2,	// VertexElementFormat.NormalizedShort2
+				4,	// VertexElementFormat.NormalizedShort4
+				2,	// VertexElementFormat.HalfVector2
+				4	// VertexElementFormat.HalfVector4
 			};
 
 			public static readonly GLenum[] VertexAttribType = new GLenum[]
@@ -3998,7 +4244,7 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		#region The Faux-Backbuffer
 
-		private bool UseFauxBackbuffer(PresentationParameters presentationParameters, DisplayMode mode)
+		private bool UseFauxBackbuffer(PresentationParameters presentationParameters)
 		{
 			int drawX, drawY;
 			SDL.SDL_GL_GetDrawableSize(

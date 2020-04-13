@@ -74,6 +74,14 @@
     <ConsolePause>False</ConsolePause>
     <AllowUnsafeBlocks>True</AllowUnsafeBlocks>
   </PropertyGroup>
+  <PropertyGroup>
+    <FNASettingsPropsFilePath>$(SolutionDir)FNA.Settings.props</FNASettingsPropsFilePath>
+  </PropertyGroup>
+  <Import Project="$(FNASettingsPropsFilePath)" Condition="Exists('$(FNASettingsPropsFilePath)')" />
+  <Target Name="ValidatePropsFilePath" BeforeTargets="BeforeBuild">
+    <Message Importance="High" Text="No property overrides found at '$(FNASettingsPropsFilePath)'" Condition="!Exists('$(FNASettingsPropsFilePath)')" />
+    <Message Importance="High" Text="Loaded property overrides from '$(FNASettingsPropsFilePath)'" Condition="Exists('$(FNASettingsPropsFilePath)')" />
+  </Target>
   <ItemGroup>
     <Reference Include="System" />
   </ItemGroup>
@@ -197,6 +205,8 @@
     <Compile Include="src\FNAPlatform\FNAPlatform.cs" />
     <Compile Include="src\FNAPlatform\FNAWindow.cs" />
     <Compile Include="src\FNAPlatform\IGLDevice.cs" />
+    <Compile Include="src\FNAPlatform\MetalDevice.cs" />
+    <Compile Include="src\FNAPlatform\MetalDevice_MTL.cs" />
     <Compile Include="src\FNAPlatform\ModernGLDevice.cs" />
     <Compile Include="src\FNAPlatform\ModernGLDevice_GL.cs" />
     <Compile Include="src\FNAPlatform\OpenGLDevice.cs" />
@@ -406,7 +416,10 @@
     <Compile Include="lib\Theorafile\csharp\Theorafile.cs" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="app.config" />
+    <None Include="app.config">
+      <Link>$(TargetFileName).config</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="src\Graphics\Effect\StockEffects\FXB\AlphaTestEffect.fxb">

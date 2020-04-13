@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -18,5 +18,18 @@ namespace Microsoft.Xna.Framework.Audio
 	[Serializable]
 	public sealed class InstancePlayLimitException : ExternalException
 	{
+		public InstancePlayLimitException()
+		{
+		}
+
+		public InstancePlayLimitException(String message)
+			: base(message)
+		{
+		}
+
+		public InstancePlayLimitException(String message, Exception innerException)
+			: base(message, innerException)
+		{
+		}
 	}
 }

@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -55,29 +55,35 @@ namespace Microsoft.Xna.Framework.Input
 
 		#endregion
 
-		#region Internal Constructor
+		#region Internal Static Methods
 
-		internal GamePadDPad(params Buttons[] buttons) : this()
+		/* Used by GamePadState public constructor, DO NOT USE !*/
+		internal static GamePadDPad FromButtonArray(params Buttons[] buttons)
 		{
+			ButtonState up = ButtonState.Released;
+			ButtonState down = ButtonState.Released;
+			ButtonState left = ButtonState.Released;
+			ButtonState right = ButtonState.Released;
 			foreach (Buttons b in buttons)
 			{
+				if ((b & Buttons.DPadUp) == Buttons.DPadUp)
+				{
+					up = ButtonState.Pressed;
+				}
 				if ((b & Buttons.DPadDown) == Buttons.DPadDown)
 				{
-					Down = ButtonState.Pressed;
+					down = ButtonState.Pressed;
 				}
 				if ((b & Buttons.DPadLeft) == Buttons.DPadLeft)
 				{
-					Left = ButtonState.Pressed;
+					left = ButtonState.Pressed;
 				}
 				if ((b & Buttons.DPadRight) == Buttons.DPadRight)
 				{
-					Right = ButtonState.Pressed;
-				}
-				if ((b & Buttons.DPadUp) == Buttons.DPadUp)
-				{
-					Up = ButtonState.Pressed;
+					right = ButtonState.Pressed;
 				}
 			}
+			return new GamePadDPad(up, down, left, right);
 		}
 
 		#endregion

@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -119,6 +119,19 @@ namespace Microsoft.Xna.Framework.Graphics
 			}
 		}
 
+		public bool SupportsNoOverwrite
+		{
+			get
+			{
+				bool result = false;
+				ForceToMainThread(() =>
+				{
+					result = GLDevice.SupportsNoOverwrite;
+				}); // End ForceToMainThread
+				return result;
+			}
+		}
+
 		public int MaxTextureSlots
 		{
 			get
@@ -219,10 +232,8 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		#region Constructor/Disposal
 
-		public ThreadedGLDevice(
-			PresentationParameters presentationParameters,
-			GraphicsAdapter adapter
-		) {
+		public ThreadedGLDevice(PresentationParameters presentationParameters)
+		{
 			csThread = new Thread(new ThreadStart(csThreadProc));
 			csThread.Start();
 
@@ -233,15 +244,13 @@ namespace Microsoft.Xna.Framework.Graphics
 					"FNA_THREADEDGLDEVICE_GLDEVICE"
 				) == "OpenGLDevice") {
 					GLDevice = new OpenGLDevice(
-						presentationParameters,
-						adapter
+						presentationParameters
 					);
 				}
 				else
 				{
 					GLDevice = new ModernGLDevice(
-						presentationParameters,
-						adapter
+						presentationParameters
 					);
 				}
 			}); // End ForceToMainThread
@@ -258,17 +267,26 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		#endregion
 
+		#region BeginFrame Operations
+
+		public void BeginFrame()
+		{
+			ForceToMainThread(() =>
+			{
+				GLDevice.BeginFrame();
+			}); // End ForceToMainThread
+		}
+
+		#endregion
+
 		#region Backbuffer Operations
 
-		public void ResetBackbuffer(
-			PresentationParameters presentationParameters,
-			GraphicsAdapter adapter
-		) {
+		public void ResetBackbuffer(PresentationParameters presentationParameters)
+		{
 			ForceToMainThread(() =>
 			{
 				GLDevice.ResetBackbuffer(
-					presentationParameters,
-					adapter
+					presentationParameters
 				);
 			}); // End ForceToMainThread
 		}
@@ -341,7 +359,8 @@ namespace Microsoft.Xna.Framework.Graphics
 			int numVertices,
 			int startIndex,
 			int primitiveCount,
-			IndexBuffer indices
+			IGLBuffer indices,
+			IndexElementSize indexElementSize
 		) {
 			ForceToMainThread(() =>
 			{
@@ -352,7 +371,8 @@ namespace Microsoft.Xna.Framework.Graphics
 					numVertices,
 					startIndex,
 					primitiveCount,
-					indices
+					indices,
+					indexElementSize
 				);
 			}); // End ForceToMainThread
 		}
@@ -365,7 +385,8 @@ namespace Microsoft.Xna.Framework.Graphics
 			int startIndex,
 			int primitiveCount,
 			int instanceCount,
-			IndexBuffer indices
+			IGLBuffer indices,
+			IndexElementSize indexElementSize
 		) {
 			ForceToMainThread(() =>
 			{
@@ -377,7 +398,8 @@ namespace Microsoft.Xna.Framework.Graphics
 					startIndex,
 					primitiveCount,
 					instanceCount,
-					indices
+					indices,
+					indexElementSize
 				);
 			}); // End ForceToMainThread
 		}
@@ -578,7 +600,8 @@ namespace Microsoft.Xna.Framework.Graphics
 			SurfaceFormat format,
 			int width,
 			int height,
-			int levelCount
+			int levelCount,
+			bool isRenderTarget
 		) {
 			IGLTexture result = null;
 			ForceToMainThread(() =>
@@ -587,7 +610,8 @@ namespace Microsoft.Xna.Framework.Graphics
 					format,
 					width,
 					height,
-					levelCount
+					levelCount,
+					isRenderTarget
 				);
 			}); // End ForceToMainThread
 			return result;
@@ -617,7 +641,8 @@ namespace Microsoft.Xna.Framework.Graphics
 		public IGLTexture CreateTextureCube(
 			SurfaceFormat format,
 			int size,
-			int levelCount
+			int levelCount,
+			bool isRenderTarget
 		) {
 			IGLTexture result = null;
 			ForceToMainThread(() =>
@@ -625,7 +650,8 @@ namespace Microsoft.Xna.Framework.Graphics
 				result = GLDevice.CreateTextureCube(
 					format,
 					size,
-					levelCount
+					levelCount,
+					isRenderTarget
 				);
 			}); // End ForceToMainThread
 			return result;
@@ -844,7 +870,8 @@ namespace Microsoft.Xna.Framework.Graphics
 			int width,
 			int height,
 			SurfaceFormat format,
-			int multiSampleCount
+			int multiSampleCount,
+			IGLTexture texture
 		) {
 			IGLRenderbuffer result = null;
 			ForceToMainThread(() =>
@@ -853,7 +880,8 @@ namespace Microsoft.Xna.Framework.Graphics
 					width,
 					height,
 					format,
-					multiSampleCount
+					multiSampleCount,
+					texture
 				);
 			}); // End ForceToMainThread
 			return result;
@@ -889,6 +917,7 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		public IGLBuffer GenVertexBuffer(
 			bool dynamic,
+			BufferUsage usage,
 			int vertexCount,
 			int vertexStride
 		) {
@@ -897,6 +926,7 @@ namespace Microsoft.Xna.Framework.Graphics
 			{
 				result = GLDevice.GenVertexBuffer(
 					dynamic,
+					usage,
 					vertexCount,
 					vertexStride
 				);
@@ -953,6 +983,7 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		public IGLBuffer GenIndexBuffer(
 			bool dynamic,
+			BufferUsage usage,
 			int indexCount,
 			IndexElementSize indexElementSize
 		) {
@@ -961,6 +992,7 @@ namespace Microsoft.Xna.Framework.Graphics
 			{
 				result = GLDevice.GenIndexBuffer(
 					dynamic,
+					usage,
 					indexCount,
 					indexElementSize
 				);

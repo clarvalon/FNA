@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -30,7 +30,7 @@ namespace Microsoft.Xna.Framework.Content
 				if (sixteenBits)
 				{
 					indexBuffer = new IndexBuffer(
-						input.GraphicsDevice,
+						input.ContentManager.GetGraphicsDevice(),
 						IndexElementSize.SixteenBits,
 						dataSize / 2,
 						BufferUsage.None
@@ -39,7 +39,7 @@ namespace Microsoft.Xna.Framework.Content
 				else
 				{
 					indexBuffer = new IndexBuffer(
-						input.GraphicsDevice,
+						input.ContentManager.GetGraphicsDevice(),
 						IndexElementSize.ThirtyTwoBits,
 						dataSize / 4,
 						BufferUsage.None

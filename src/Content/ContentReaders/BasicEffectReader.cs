@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -21,7 +21,7 @@ namespace Microsoft.Xna.Framework.Content
 			ContentReader input,
 			BasicEffect existingInstance
 		) {
-			BasicEffect effect = new BasicEffect(input.GraphicsDevice);
+			BasicEffect effect = new BasicEffect(input.ContentManager.GetGraphicsDevice());
 			Texture2D texture = input.ReadExternalReference<Texture>() as Texture2D;
 			if (texture != null)
 			{

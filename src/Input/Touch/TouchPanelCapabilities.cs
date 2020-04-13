@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -17,13 +17,13 @@ namespace Microsoft.Xna.Framework.Input.Touch
 		public bool IsConnected
 		{
 			get;
-			set;
+			private set;
 		}
 
 		public int MaximumTouchCount
 		{
 			get;
-			set;
+			private set;
 		}
 
 		#endregion

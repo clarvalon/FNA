@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -97,9 +97,10 @@ namespace Microsoft.Xna.Framework.Content
 			// Read the mesh data.
 			int meshCount = reader.ReadInt32();
 
+			GraphicsDevice device = reader.ContentManager.GetGraphicsDevice();
+
 			for (int i = 0; i < meshCount; i += 1)
 			{
-
 				string name = reader.ReadObject<string>();
 				int parentBoneIndex = ReadBoneReference(reader, boneCount);
 				BoundingSphere boundingSphere = reader.ReadBoundingSphere();
@@ -158,7 +159,7 @@ namespace Microsoft.Xna.Framework.Content
 				{
 					continue;
 				}
-				ModelMesh mesh = new ModelMesh(reader.GraphicsDevice, parts);
+				ModelMesh mesh = new ModelMesh(device, parts);
 				mesh.Tag = meshTag;
 				mesh.Name = name;
 				mesh.ParentBone = bones[parentBoneIndex];
@@ -175,7 +176,7 @@ namespace Microsoft.Xna.Framework.Content
 			}
 			// Read the final pieces of model data.
 			int rootBoneIndex = ReadBoneReference(reader, boneCount);
-			Model model = new Model(reader.GraphicsDevice, bones, meshes);
+			Model model = new Model(device, bones, meshes);
 			model.Root = bones[rootBoneIndex];
 			model.BuildHierarchy();
 			// Tag?

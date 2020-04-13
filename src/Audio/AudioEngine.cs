@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -73,7 +73,7 @@ namespace Microsoft.Xna.Framework.Audio
 		#region Public Static Variables
 
 		// STOP LEAKING YOUR XACT DATA, GOOD GRIEF PEOPLE
-		public static bool ProgramExiting = false;
+		internal static bool ProgramExiting = false;
 
 		#endregion
 

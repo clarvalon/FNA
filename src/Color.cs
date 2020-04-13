@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -1595,40 +1595,6 @@ namespace Microsoft.Xna.Framework
 			G = (byte) MathHelper.Clamp(color.Y * 255, Byte.MinValue, Byte.MaxValue);
 			B = (byte) MathHelper.Clamp(color.Z * 255, Byte.MinValue, Byte.MaxValue);
 			A = 255;
-		}
-
-		/// <summary>
-		/// Constructs an RGBA color from a <see cref="Color"/> and an alpha value.
-		/// </summary>
-		/// <param name="color">
-		/// A <see cref="Color"/> for RGB values of new <see cref="Color"/> instance.
-		/// </param>
-		/// <param name="alpha">The alpha component value from 0 to 255.</param>
-		public Color(Color color, int alpha)
-		{
-			packedValue = 0;
-
-			R = color.R;
-			G = color.G;
-			B = color.B;
-			A = (byte) MathHelper.Clamp(alpha, Byte.MinValue, Byte.MaxValue);
-		}
-
-		/// <summary>
-		/// Constructs an RGBA color from color and alpha value.
-		/// </summary>
-		/// <param name="color">
-		/// A <see cref="Color"/> for RGB values of new <see cref="Color"/> instance.
-		/// </param>
-		/// <param name="alpha">Alpha component value from 0.0f to 1.0f.</param>
-		public Color(Color color, float alpha)
-		{
-			packedValue = 0;
-
-			R = color.R;
-			G = color.G;
-			B = color.B;
-			A = (byte) MathHelper.Clamp(alpha * 255, Byte.MinValue, Byte.MaxValue);
 		}
 
 		/// <summary>

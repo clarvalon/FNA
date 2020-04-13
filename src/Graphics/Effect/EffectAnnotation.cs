@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -73,7 +73,7 @@ namespace Microsoft.Xna.Framework.Graphics
 			IntPtr data
 		) {
 			Name = name;
-			Semantic = semantic;
+			Semantic = semantic ?? string.Empty;
 			RowCount = rowCount;
 			ColumnCount = columnCount;
 			ParameterClass = parameterClass;

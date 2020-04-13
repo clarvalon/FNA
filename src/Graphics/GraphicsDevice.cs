@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -340,20 +340,20 @@ namespace Microsoft.Xna.Framework.Graphics
 		public event EventHandler<EventArgs> Disposing;
 
 		// TODO: Hook this up to GraphicsResource
-		internal void OnResourceCreated()
+		internal void OnResourceCreated(object resource)
 		{
 			if (ResourceCreated != null)
 			{
-				ResourceCreated(this, (ResourceCreatedEventArgs) EventArgs.Empty);
+				ResourceCreated(this, new ResourceCreatedEventArgs(resource));
 			}
 		}
 
 		// TODO: Hook this up to GraphicsResource
-		internal void OnResourceDestroyed()
+		internal void OnResourceDestroyed(string name, object tag)
 		{
 			if (ResourceDestroyed != null)
 			{
-				ResourceDestroyed(this, (ResourceDestroyedEventArgs) EventArgs.Empty);
+				ResourceDestroyed(this, new ResourceDestroyedEventArgs(name, tag));
 			}
 		}
 
@@ -432,6 +432,11 @@ namespace Microsoft.Xna.Framework.Graphics
 			// Set the default viewport and scissor rect.
 			Viewport = new Viewport(PresentationParameters.Bounds);
 			ScissorRectangle = Viewport.Bounds;
+
+			// Set the initial swap interval
+			GLDevice.SetPresentationInterval(
+				PresentationParameters.PresentationInterval
+			);
 
 			// Allocate the pipeline cache to be used by Effects
 			PipelineCache = new PipelineCache(this);
@@ -653,10 +658,7 @@ namespace Microsoft.Xna.Framework.Graphics
 			 * The GLDevice needs to know what we're up to right away.
 			 * -flibit
 			 */
-			GLDevice.ResetBackbuffer(
-				PresentationParameters,
-				Adapter
-			);
+			GLDevice.ResetBackbuffer(PresentationParameters);
 
 			// The mouse needs to know this for faux-backbuffer mouse scaling.
 			Input.Mouse.INTERNAL_BackBufferWidth = PresentationParameters.BackBufferWidth;
@@ -1110,7 +1112,8 @@ namespace Microsoft.Xna.Framework.Graphics
 				numVertices,
 				startIndex,
 				primitiveCount,
-				Indices
+				Indices.buffer,
+				Indices.IndexElementSize
 			);
 		}
 
@@ -1148,7 +1151,8 @@ namespace Microsoft.Xna.Framework.Graphics
 				startIndex,
 				primitiveCount,
 				instanceCount,
-				Indices
+				Indices.buffer,
+				Indices.IndexElementSize
 			);
 		}
 

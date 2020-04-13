@@ -1,6 +1,6 @@
 #region License
 /* FNA - XNA4 Reimplementation for Desktop Platforms
- * Copyright 2009-2019 Ethan Lee and the MonoGame Team
+ * Copyright 2009-2020 Ethan Lee and the MonoGame Team
  *
  * Released under the Microsoft Public License.
  * See LICENSE for details.
@@ -127,8 +127,6 @@ namespace Microsoft.Xna.Framework.Graphics
 			GL_RED =				0x1903,
 			GL_RGB =				0x1907,
 			GL_RGBA =				0x1908,
-			GL_LUMINANCE =				0x1909,
-			GL_LUMINANCE8 =				0x8040,
 			GL_RGBA8 =				0x8058,
 			GL_RGBA4 =				0x8056,
 			GL_RGB5_A1 =				0x8057,
@@ -138,6 +136,7 @@ namespace Microsoft.Xna.Framework.Graphics
 			GL_DEPTH_COMPONENT16 =			0x81A5,
 			GL_DEPTH_COMPONENT24 =			0x81A6,
 			GL_RG =					0x8227,
+			GL_R8 =					0x8229,
 			GL_RG8 =				0x822B,
 			GL_RG16 =				0x822C,
 			GL_R16F =				0x822D,
@@ -170,11 +169,20 @@ namespace Microsoft.Xna.Framework.Graphics
 			GL_TEXTURE0 =				0x84C0,
 			GL_MAX_TEXTURE_IMAGE_UNITS =		0x8872,
 			GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS =	0x8B4C,
+			// Texture Swizzling
+			GL_TEXTURE_SWIZZLE_R =			0x8E42,
+			GL_TEXTURE_SWIZZLE_G =			0x8E43,
+			GL_TEXTURE_SWIZZLE_B =			0x8E44,
+			GL_TEXTURE_SWIZZLE_A =			0x8E45,
 			// Buffer objects
 			GL_ARRAY_BUFFER =			0x8892,
 			GL_ELEMENT_ARRAY_BUFFER =		0x8893,
-			GL_STREAM_DRAW =			0x88E0,
 			GL_STATIC_DRAW =			0x88E4,
+			GL_MAP_READ_BIT =			0x0001,
+			GL_MAP_WRITE_BIT =			0x0002,
+			GL_MAP_PERSISTENT_BIT =			0x0040,
+			GL_MAP_COHERENT_BIT =			0x0080,
+			GL_DYNAMIC_STORAGE_BIT =		0x0100,
 			GL_MAX_VERTEX_ATTRIBS =			0x8869,
 			// Render targets
 			GL_FRAMEBUFFER =			0x8D40,
@@ -519,6 +527,14 @@ namespace Microsoft.Xna.Framework.Graphics
 		private GetTextureSubImage glGetTextureSubImage;
 
 		[UnmanagedFunctionPointer(CallingConvention.StdCall)]
+		private delegate void TextureParameteri(
+			uint texture,
+			GLenum parameter,
+			GLenum param
+		);
+		private TextureParameteri glTextureParameteri;
+
+		[UnmanagedFunctionPointer(CallingConvention.StdCall)]
 		private delegate void CreateSamplers(
 			int n,
 			IntPtr samplers
@@ -605,6 +621,32 @@ namespace Microsoft.Xna.Framework.Graphics
 			IntPtr data
 		);
 		private GetNamedBufferSubData glGetNamedBufferSubData;
+
+		[UnmanagedFunctionPointer(CallingConvention.StdCall)]
+		private delegate void NamedBufferStorage(
+			uint buffer,
+			IntPtr size,
+			IntPtr data,
+			GLenum flags // Technically uint, but...
+		);
+		private NamedBufferStorage glNamedBufferStorage;
+
+		[UnmanagedFunctionPointer(CallingConvention.StdCall)]
+		private delegate IntPtr MapNamedBufferRange(
+			uint buffer,
+			IntPtr offset,
+			IntPtr length,
+			GLenum access
+		);
+		private MapNamedBufferRange glMapNamedBufferRange;
+
+		[UnmanagedFunctionPointer(CallingConvention.StdCall)]
+		private delegate void UnmapNamedBuffer(uint buffer);
+		private UnmapNamedBuffer glUnmapNamedBuffer;
+
+		[UnmanagedFunctionPointer(CallingConvention.StdCall)]
+		private delegate void InvalidateBufferData(uint buffer);
+		private InvalidateBufferData glInvalidateBufferData;
 
 		/* END BUFFER FUNCTIONS */
 
@@ -1104,6 +1146,10 @@ namespace Microsoft.Xna.Framework.Graphics
 					SDL.SDL_GL_GetProcAddress("glGetTextureSubImage"),
 					typeof(GetTextureSubImage)
 				);
+				glTextureParameteri = (TextureParameteri) Marshal.GetDelegateForFunctionPointer(
+					SDL.SDL_GL_GetProcAddress("glTextureParameteri"),
+					typeof(TextureParameteri)
+				);
 				glCreateSamplers = (CreateSamplers) Marshal.GetDelegateForFunctionPointer(
 					SDL.SDL_GL_GetProcAddress("glCreateSamplers"),
 					typeof(CreateSamplers)
@@ -1151,6 +1197,22 @@ namespace Microsoft.Xna.Framework.Graphics
 				glGetNamedBufferSubData = (GetNamedBufferSubData) Marshal.GetDelegateForFunctionPointer(
 					SDL.SDL_GL_GetProcAddress("glGetNamedBufferSubData"),
 					typeof(GetNamedBufferSubData)
+				);
+				glNamedBufferStorage = (NamedBufferStorage) Marshal.GetDelegateForFunctionPointer(
+					SDL.SDL_GL_GetProcAddress("glNamedBufferStorage"),
+					typeof(NamedBufferStorage)
+				);
+				glMapNamedBufferRange = (MapNamedBufferRange) Marshal.GetDelegateForFunctionPointer(
+					SDL.SDL_GL_GetProcAddress("glMapNamedBufferRange"),
+					typeof(MapNamedBufferRange)
+				);
+				glUnmapNamedBuffer = (UnmapNamedBuffer) Marshal.GetDelegateForFunctionPointer(
+					SDL.SDL_GL_GetProcAddress("glUnmapNamedBuffer"),
+					typeof(UnmapNamedBuffer)
+				);
+				glInvalidateBufferData = (InvalidateBufferData) Marshal.GetDelegateForFunctionPointer(
+					SDL.SDL_GL_GetProcAddress("glInvalidateBufferData"),
+					typeof(InvalidateBufferData)
 				);
 				glClearColor = (ClearColor) Marshal.GetDelegateForFunctionPointer(
 					SDL.SDL_GL_GetProcAddress("glClearColor"),
