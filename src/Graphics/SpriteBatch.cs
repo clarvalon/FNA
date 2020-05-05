@@ -1172,6 +1172,12 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		private unsafe void FlushBatch()
 		{
+			if (numSprites == 0)
+			{
+				// Nothing to do.
+				return;
+			}
+
 			int offset = 0;
 			Texture2D curTexture = null;
 
