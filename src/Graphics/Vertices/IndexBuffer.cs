@@ -38,9 +38,9 @@ namespace Microsoft.Xna.Framework.Graphics
 
 		#endregion
 
-		#region Internal Properties
+		#region Internal FNA3D Variables
 
-		internal IGLBuffer buffer;
+		internal IntPtr buffer;
 
 		#endregion
 
@@ -110,8 +110,9 @@ namespace Microsoft.Xna.Framework.Graphics
 			IndexCount = indexCount;
 			BufferUsage = usage;
 
-			buffer = GraphicsDevice.GLDevice.GenIndexBuffer(
-				dynamic,
+			buffer = FNA3D.FNA3D_GenIndexBuffer(
+				GraphicsDevice.GLDevice,
+				(byte) (dynamic ? 1 : 0),
 				usage,
 				IndexCount,
 				IndexElementSize
@@ -126,7 +127,10 @@ namespace Microsoft.Xna.Framework.Graphics
 		{
 			if (!IsDisposed)
 			{
-				GraphicsDevice.GLDevice.AddDisposeIndexBuffer(buffer);
+				FNA3D.FNA3D_AddDisposeIndexBuffer(
+					GraphicsDevice.GLDevice,
+					buffer
+				);
 			}
 			base.Dispose(disposing);
 		}
@@ -180,14 +184,14 @@ namespace Microsoft.Xna.Framework.Graphics
 				);
 			}
 
+			int elementSizeInBytes = Marshal.SizeOf(typeof(T));
 			GCHandle handle = GCHandle.Alloc(data, GCHandleType.Pinned);
-			GraphicsDevice.GLDevice.GetIndexBufferData(
+			FNA3D.FNA3D_GetIndexBufferData(
+				GraphicsDevice.GLDevice,
 				buffer,
 				offsetInBytes,
-				handle.AddrOfPinnedObject(),
-				startIndex,
-				elementCount,
-				Marshal.SizeOf(typeof(T))
+				handle.AddrOfPinnedObject() + (startIndex * elementSizeInBytes),
+				elementCount * elementSizeInBytes
 			);
 			handle.Free();
 		}
@@ -199,7 +203,8 @@ namespace Microsoft.Xna.Framework.Graphics
 		public void SetData<T>(T[] data) where T : struct
 		{
 			GCHandle handle = GCHandle.Alloc(data, GCHandleType.Pinned);
-			GraphicsDevice.GLDevice.SetIndexBufferData(
+			FNA3D.FNA3D_SetIndexBufferData(
+				GraphicsDevice.GLDevice,
 				buffer,
 				0,
 				handle.AddrOfPinnedObject(),
@@ -217,7 +222,8 @@ namespace Microsoft.Xna.Framework.Graphics
 			ErrorCheck(data, startIndex, elementCount);
 
 			GCHandle handle = GCHandle.Alloc(data, GCHandleType.Pinned);
-			GraphicsDevice.GLDevice.SetIndexBufferData(
+			FNA3D.FNA3D_SetIndexBufferData(
+				GraphicsDevice.GLDevice,
 				buffer,
 				0,
 				handle.AddrOfPinnedObject() + (startIndex * Marshal.SizeOf(typeof(T))),
@@ -236,7 +242,8 @@ namespace Microsoft.Xna.Framework.Graphics
 			ErrorCheck(data, startIndex, elementCount);
 
 			GCHandle handle = GCHandle.Alloc(data, GCHandleType.Pinned);
-			GraphicsDevice.GLDevice.SetIndexBufferData(
+			FNA3D.FNA3D_SetIndexBufferData(
+				GraphicsDevice.GLDevice,
 				buffer,
 				offsetInBytes,
 				handle.AddrOfPinnedObject() + (startIndex * Marshal.SizeOf(typeof(T))),
@@ -256,7 +263,8 @@ namespace Microsoft.Xna.Framework.Graphics
 			int dataLength,
 			SetDataOptions options
 		) {
-			GraphicsDevice.GLDevice.SetIndexBufferData(
+			FNA3D.FNA3D_SetIndexBufferData(
+				GraphicsDevice.GLDevice,
 				buffer,
 				offsetInBytes,
 				data,
